@@ -217,3 +217,30 @@ test("authenticated mobile requests use fresh preview IDs and explicit attestati
     else process.env.EXPO_PUBLIC_RESUME_API_URL = oldUrl;
   }
 });
+
+test("temporary token refresh failures preserve offline recovery; wrong owners cannot make requests", async () => {
+  const makeApi = auth => loadSource("lib/cv/api.ts", { "@/lib/supabase": { supabase: { auth } } });
+  const token = { access_token: "isolated-token", expires_at: Date.now()/1000+10, user: {id:"owner-a"} };
+  const retryable = Object.assign(Error("offline"), {name:"AuthRetryableFetchError",status:0});
+  const api = makeApi({getSession:async()=>({data:{session:token},error:null}),refreshSession:async()=>({data:{session:null},error:retryable})});
+  await assert.rejects(api.mobileAccessToken("owner-a"), error=>!(error instanceof api.CvApiError) && /offline/.test(error.message));
+  await assert.rejects(api.mobileAccessToken("owner-b"), error=>error.status===401);
+  const expired = makeApi({getSession:async()=>({data:{session:token},error:null}),refreshSession:async()=>({data:{session:null},error:Object.assign(Error("session expired"),{status:400})})});
+  await assert.rejects(expired.mobileAccessToken("owner-a"),error=>error.status===401);
+});
+test("retry processing uses the retained original's authenticated mobile endpoint and checks its ID", async () => {
+  const oldFetch=global.fetch, oldUrl=process.env.EXPO_PUBLIC_RESUME_API_URL;
+  process.env.EXPO_PUBLIC_RESUME_API_URL="https://isolated-upload-test.invalid";
+  const requests=[];
+  const resume={id:tailoringId,original_filename:"Original.pdf",display_name:"My engineering CV",is_default:true,mime_type:"application/pdf",file_size_bytes:1024,processing_status:"ready",created_at:"2026-11-01T12:00:00Z"};
+  const api=loadSource("lib/cv/api.ts",{"@/lib/supabase":{supabase:{auth:{getSession:async()=>({data:{session:{access_token:"isolated-token",user:{id:"owner-a"},expires_at:Date.now()/1000+3600}}})}}}});
+  try {
+    global.fetch=async(url,init)=>{requests.push({url,...init});return new Response(JSON.stringify(resume),{status:200});};
+    const result=await api.retryResumeProcessing("owner-a",tailoringId,new AbortController().signal);
+    assert.equal(requests.length,1);assert.equal(requests[0].method,"POST");assert.equal(requests[0].headers.Authorization,"Bearer isolated-token");assert.equal(requests[0].body,undefined);
+    assert.ok(requests[0].url.endsWith('/api/v1/mobile/resumes/'+tailoringId+'/retry-processing'));
+    assert.equal(result.display_name,"My engineering CV");assert.equal(result.is_default,true);
+    global.fetch=async()=>new Response(JSON.stringify({...resume,id:"other-original"}),{status:200});
+    await assert.rejects(api.retryResumeProcessing("owner-a",tailoringId,new AbortController().signal));
+  } finally {global.fetch=oldFetch;if(oldUrl===undefined)delete process.env.EXPO_PUBLIC_RESUME_API_URL;else process.env.EXPO_PUBLIC_RESUME_API_URL=oldUrl;}
+});

@@ -114,7 +114,7 @@ export function parseTailoringPreview(value: unknown): TailoringPreview {
     options.remaining_slots > 30
   )
     throw incomplete();
-  const warnings = stringList(source.warnings);
+  const warnings = [...stringList(source.warnings), ...stringList(value.preview.warnings)];
   const summary = isJsonObject(source.change_summary) ? source.change_summary : {};
   const change_summary = Object.fromEntries(
     SUMMARY_KEYS.map((key) => {
@@ -183,6 +183,7 @@ export function parseTailoringPreview(value: unknown): TailoringPreview {
       resume_preview: value.preview.resume_preview,
     },
     review: {
+      ...source,
       preview_id: value.preview.preview_id,
       preview_expires_at:
         typeof source.preview_expires_at === "string" ? source.preview_expires_at : null,

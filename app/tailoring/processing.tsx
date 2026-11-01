@@ -53,10 +53,10 @@ export default function TailoringProcessingScreen() {
               accessibilityRole="header"
               className="text-h2 text-center tracking-tight text-foreground"
             >
-              Working on your resume
+              {run.status === "error" ? "Your tailoring needs attention" : run.status === "idle" ? "Tailor your next CV" : "Working on your resume"}
             </Text>
             <Text className="text-caption text-center leading-5 text-muted-foreground">
-              This may take a few minutes.
+              {running ? "This may take a few minutes. You can leave this screen and return to the same job." : "Your original CV stays unchanged."}
             </Text>
           </View>
           {run.startedAt !== null ? (
@@ -159,6 +159,7 @@ export default function TailoringProcessingScreen() {
             <View className="rounded-2xl border border-border bg-card px-4 pb-1 pt-5">
               <StageTimeline progress={stageProgress(run.progress)} />
             </View>
+            {running ? <Button variant="outline" onPress={() => { run.acknowledgeJobNavigation(); router.replace("/(tabs)/tailor"); }} className="h-12 rounded-xl"><Text>Continue in background</Text></Button> : null}
             <View className="flex-row items-center justify-center gap-2 pb-2">
               <LucideIcon name="ShieldCheck" size={14} className="text-muted-foreground" />
               <Text className="text-caption text-muted-foreground">

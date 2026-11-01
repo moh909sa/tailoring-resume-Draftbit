@@ -8,6 +8,8 @@ export type ProcessingStatus = "pending" | "processing" | "ready" | "failed";
 export type Resume = {
   id: string;
   original_filename: string;
+  display_name: string | null;
+  is_default: boolean;
   mime_type: string;
   file_size_bytes: number;
   processing_status: ProcessingStatus;
@@ -54,6 +56,8 @@ export function parseResume(value: unknown): Resume {
   return {
     id: value.id,
     original_filename: value.original_filename,
+    display_name: typeof value.display_name === "string" && value.display_name.trim() ? value.display_name : null,
+    is_default: value.is_default === true,
     mime_type: value.mime_type,
     file_size_bytes: value.file_size_bytes,
     processing_status: value.processing_status as ProcessingStatus,

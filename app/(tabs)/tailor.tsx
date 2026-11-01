@@ -1,5 +1,5 @@
 import { useTailoring } from "@/lib/tailoring/TailoringProvider";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { router } from "expo-router";
 import {
   ActivityIndicator,
@@ -13,7 +13,6 @@ import { AppScreen } from "@/components/layout/AppScreen";
 import { ScreenHeader } from "@/components/layout/ScreenHeader";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CvSelectionSheet } from "@/components/cv/CvSelectionSheet";
 import { Notice } from "@/components/cv/Notice";
@@ -21,47 +20,27 @@ import LucideIcon from "@/lib/icons/LucideIcon";
 import { useMyCv } from "@/lib/cv/useMyCv";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useTheme } from "@/theming/ThemeProvider";
-import { cn } from "@/lib/utils";
+import { useTailorForm } from "@/lib/tailoring/useTailorForm";
 
 export default function TailorScreen() {
   const { session, loading: authLoading, error: authError } = useAuth();
   const { theme } = useTheme();
   const cv = useMyCv();
   const tailoring = useTailoring();
-  const restoredInputOwner = useRef<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
-  const [mode, setMode] = useState<"description" | "url">("description");
-  const [description, setDescription] = useState("");
-  const [url, setUrl] = useState("");
   const ownerId = session?.user?.id ?? null;
+  const form = useTailorForm(ownerId, tailoring.input, tailoring.hydrating || tailoring.jobRecovering);
+  const { selectedId, description } = form.form;
   const selected = cv.resumes.find((item) => item.id === selectedId);
-  useEffect(() => {
-    setSelectedId(null);
-    setDescription("");
-    setUrl("");
-    setChoosing(false);
-  }, [ownerId]);
-  useEffect(() => {
-    if (!cv.loading && !cv.listError && selectedId && !selected) setSelectedId(null);
-  }, [cv.loading, cv.listError, selectedId, selected]);
-
-  useEffect(() => {
-    if (!ownerId || tailoring.hydrating || restoredInputOwner.current === ownerId) return;
-    restoredInputOwner.current = ownerId;
-    if (tailoring.input) {
-      setSelectedId(tailoring.input.resumeId);
-      setDescription(tailoring.input.jobDescription);
-      setMode("description");
-    }
-  }, [ownerId, tailoring.hydrating, tailoring.input]);
+  useEffect(() => setChoosing(false), [ownerId]);
 
   const descriptionLength = description.trim().length;
   const canTailor =
     !!ownerId &&
     !!selected &&
     selected.processing_status === "ready" &&
-    mode === "description" &&
+    !selected.recovery_required &&
+    !form.loading &&
     descriptionLength >= 50 &&
     descriptionLength <= 12000 &&
     !authLoading &&
@@ -69,7 +48,12 @@ export default function TailorScreen() {
     !tailoring.jobRecovering &&
     !tailoring.jobConnectionError &&
     !authError;
+  const existing = !!ownerId && !!tailoring.tailoringId && tailoring.status === "success" && tailoring.input?.resumeId === selectedId && tailoring.input?.jobDescription === description.trim();
   function startTailoring() {
+    if (existing && tailoring.tailoringId) {
+      router.push(tailoring.saved ? { pathname: "/cv-editor/[id]", params: { id: tailoring.tailoringId } } : { pathname: "/tailoring/review", params: { tailoringId: tailoring.tailoringId } });
+      return;
+    }
     if (tailoring.status === "running") {
       router.navigate("/tailoring/processing");
       return;
@@ -78,7 +62,7 @@ export default function TailorScreen() {
     if (
       tailoring.start({
         resumeId: selected.id,
-        filename: selected.original_filename,
+        filename: selected.display_name ?? selected.original_filename,
         jobDescription: description.trim(),
       })
     )
@@ -109,7 +93,7 @@ export default function TailorScreen() {
             <Text className="text-h4 text-foreground">Your CV</Text>
             <Pressable
               onPress={() => setChoosing(true)}
-              disabled={authLoading}
+              disabled={authLoading || form.loading}
               accessibilityRole="button"
               accessibilityLabel="Choose an uploaded CV"
               className="flex-row items-center gap-3 rounded-2xl border border-border bg-card p-4 active:bg-secondary"
@@ -123,7 +107,7 @@ export default function TailorScreen() {
               </View>
               <View className="flex-1 gap-1">
                 <Text className="text-h5 text-foreground" numberOfLines={2}>
-                  {selected?.original_filename ?? "Choose a CV"}
+                  {selected?.display_name ?? selected?.original_filename ?? "Choose a CV"}
                 </Text>
                 <Text className="text-caption text-muted-foreground">
                   {selected
@@ -134,6 +118,7 @@ export default function TailorScreen() {
               <LucideIcon name="ChevronDown" size={18} className="text-muted-foreground" />
             </Pressable>
             {authError ? <Notice tone="error" message={authError} /> : null}
+            {form.error ? <Notice tone="error" message={form.error} /> : null}
             {cv.listError ? (
               <View className="gap-3">
                 <Notice tone="error" message={cv.listError} />
@@ -155,70 +140,26 @@ export default function TailorScreen() {
           </View>
           <View className="gap-3">
             <Text className="text-h4 text-foreground">The opportunity</Text>
-            <View className="mb-1 flex-row rounded-xl bg-secondary p-1">
-              <Pressable
-                onPress={() => setMode("description")}
-                accessibilityRole="button"
-                accessibilityState={{ selected: mode === "description" }}
-                className={cn(
-                  "h-10 flex-1 items-center justify-center rounded-lg",
-                  mode === "description" && "border border-border bg-card",
-                )}
-              >
-                <Text
-                  className={cn(
-                    "text-h6",
-                    mode === "description" ? "text-primary" : "text-muted-foreground",
-                  )}
-                >
-                  Job description
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setMode("url")}
-                accessibilityRole="button"
-                accessibilityState={{ selected: mode === "url" }}
-                className={cn(
-                  "h-10 flex-1 items-center justify-center rounded-lg",
-                  mode === "url" && "border border-border bg-card",
-                )}
-              >
-                <Text
-                  className={cn(
-                    "text-h6",
-                    mode === "url" ? "text-primary" : "text-muted-foreground",
-                  )}
-                >
-                  Job URL
-                </Text>
-              </Pressable>
+            <Text className="text-body leading-6 text-muted-foreground">
+              Paste the full job description, including responsibilities and requirements.
+            </Text>
+            <Textarea
+              accessibilityLabel="Job description"
+              value={description}
+              onChangeText={(value) => form.update({ description: value })}
+              editable={!form.loading}
+              placeholder="Paste the job description here…"
+              numberOfLines={8}
+              className="min-h-56 rounded-2xl p-4 leading-6"
+            />
+            <View className="flex-row justify-between gap-3">
+              <Text className="flex-1 text-caption text-muted-foreground">
+                {form.loading ? "Restoring your draft…" : ownerId && !form.error ? form.saving ? "Saving draft…" : "Draft kept on this device" : "Include the role and required skills"}
+              </Text>
+              <Text className={descriptionLength > 12000 ? "text-caption text-destructive" : "text-caption text-muted-foreground"}>
+                {descriptionLength.toLocaleString()} / 12,000
+              </Text>
             </View>
-            {mode === "description" ? (
-              <Textarea
-                accessibilityLabel="Job description"
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Paste the job description, including responsibilities and requirements…"
-                numberOfLines={8}
-                className="min-h-56 rounded-2xl p-4 leading-6"
-              />
-            ) : (
-              <View className="gap-2">
-                <Input
-                  accessibilityLabel="Job posting URL"
-                  value={url}
-                  onChangeText={setUrl}
-                  placeholder="https://company.com/careers/role"
-                  keyboardType="url"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  className="h-14 rounded-2xl px-4"
-                />
-                <Text className="text-caption leading-5 text-muted-foreground">
-                  Paste the full link to the job posting.
-                </Text>
-              </View>
-            )}
           </View>
           <View className="mt-8 gap-3">
             {tailoring.jobConnectionError && tailoring.status !== "running" ? (
@@ -234,7 +175,7 @@ export default function TailorScreen() {
                 </Button>
               </View>
             ) : null}
-            {tailoring.tailoringId && !tailoring.saved && tailoring.status !== "running" ? (
+            {tailoring.tailoringId && !tailoring.saved && !existing && tailoring.status !== "running" ? (
               <Button
                 variant="outline"
                 onPress={() =>
@@ -250,26 +191,24 @@ export default function TailorScreen() {
               </Button>
             ) : null}
             <Button
-              disabled={!canTailor && tailoring.status !== "running"}
+              disabled={!existing && !canTailor && tailoring.status !== "running"}
               onPress={startTailoring}
               accessibilityLabel={
-                tailoring.status === "running" ? "View tailoring progress" : "Tailor My CV"
+                tailoring.status === "running" ? "View tailoring progress" : existing ? tailoring.saved ? "Open saved CV" : "Continue review" : "Tailor My CV"
               }
               className="h-14 gap-2 rounded-2xl"
             >
               <LucideIcon name="Sparkles" size={19} className="text-primary-foreground" />
-              <Text>{tailoring.status === "running" ? "View progress" : "Tailor My CV"}</Text>
+              <Text>{tailoring.status === "running" ? "View progress" : existing ? tailoring.saved ? "Open saved CV" : "Continue review" : "Tailor My CV"}</Text>
             </Button>
             <Text className="text-caption text-center leading-5 text-muted-foreground">
-              {mode === "url"
-                ? "To tailor your CV, switch to Job description and paste the text. Job links aren’t supported yet."
-                : selected && selected.processing_status !== "ready"
-                  ? "Choose a CV marked Ready before tailoring."
-                  : descriptionLength > 12000
-                    ? "Keep the job description to 12,000 characters or fewer."
-                    : descriptionLength < 50
-                      ? "Paste a job description of 50–12,000 characters. You’ll review the preview before anything is confirmed."
-                      : "You’ll review every change before anything is confirmed."}
+              {selected && (selected.processing_status !== "ready" || selected.recovery_required)
+                ? "Choose a CV marked Ready before tailoring."
+                : descriptionLength > 12000
+                  ? "Keep the job description to 12,000 characters or fewer."
+                  : descriptionLength < 50
+                    ? "Paste at least 50 characters. You’ll review the result before saving."
+                    : "You’ll review every change before saving. Your original CV stays unchanged."}
             </Text>
           </View>
         </ScrollView>
@@ -282,7 +221,7 @@ export default function TailorScreen() {
         error={authError ?? cv.listError}
         onClose={() => setChoosing(false)}
         onSelect={(id) => {
-          setSelectedId(id);
+          form.update({ selectedId: id });
           setChoosing(false);
         }}
         onUpload={goToMyCvs}

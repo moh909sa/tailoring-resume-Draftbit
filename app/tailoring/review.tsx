@@ -67,6 +67,7 @@ type WizardItem = { connected?: string } & (
       verification?: boolean;
     }
   | { id: string; kind: "resume"; item: ReviewItem }
+  | { id: string; kind: "feedback"; item: ReviewItem }
   | { id: string; kind: "placement"; placement: KeywordPlacement }
   | { id: string; kind: "warning"; message: string }
   | { id: string; kind: "review-note"; message: string }
@@ -86,7 +87,8 @@ export default function TailoringReviewScreen() {
   const list = useRef<FlatList<WizardItem>>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["summary"]));
   const [now, setNow] = useState(Date.now());
-  const review = run.preview?.review;
+  const routeMatches = !routeId || routeId === run.tailoringId;
+  const review = routeMatches ? run.preview?.review : undefined;
   const busy = run.hydrating || run.reviewActivity !== null || run.status === "running";
   const expired = run.preview
     ? previewHasExpired(run.preview, now) || run.reviewProblem?.kind === "expired"
@@ -126,10 +128,10 @@ export default function TailoringReviewScreen() {
   }, [busy, run.step, run.saved, setStep]);
   useEffect(() => {
     list.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [run.step, run.preview?.tailoring_id]);
+  }, [run.step, run.preview?.tailoring_id, run.tailoringId, routeMatches]);
   useEffect(() => {
-    const savedId = run.confirmation?.tailoring_id ?? run.preview?.tailoring_id;
-    if (run.saved && savedId) router.replace({ pathname: "/cv-editor/[id]", params: { id: savedId } });
+    const savedId = run.confirmation?.tailoring_id ?? run.preview?.tailoring_id ?? run.tailoringId;
+    if (routeMatches && run.saved && savedId) router.replace({ pathname: "/cv-editor/[id]", params: { id: savedId } });
   }, [run.saved, run.confirmation?.tailoring_id, run.preview?.tailoring_id]);
 
   function close() {
@@ -152,7 +154,7 @@ export default function TailoringReviewScreen() {
   const routeOptions = (
     <Stack.Screen options={{ title: "Review your resume", gestureEnabled: !busy }} />
   );
-  if (run.saved)
+  if (run.saved && routeMatches)
     return (
       <AppScreen>
         {routeOptions}
@@ -299,9 +301,8 @@ export default function TailoringReviewScreen() {
   }
   const warningsByChange = new Map<ResumeChange, string[]>();
   reviewWarningsForStep(review.warnings, run.step).forEach((message, index) => {
-    if (run.step === 2) return; // Save groups these same warnings below.
-    // Step 2 retains every warning. Attach exact backend paths to their
-    // comparison; warnings without a matching comparison stay visible here.
+    // Attach verification to its exact comparison; also show every warning
+    // beside the final read-only document before confirmation.
     const rawWarning = review.warnings[index];
     const referencedPaths: string[] =
       rawWarning?.match(/[A-Za-z_]\w*(?:\[\d+\]|\.[A-Za-z_]\w*)+/g) ?? [];
@@ -354,7 +355,7 @@ export default function TailoringReviewScreen() {
               description: "Description Changes",
             } as Record<string, string>
           )[section.type] ?? sectionTitle(section.type),
-        subtitle: `${section.items.length} change${section.items.length === 1 ? "" : "s"}${hasAddedSkills ? " · Review skill accuracy in Save" : highRisk ? " · Contains high risk changes" : ""}`,
+        subtitle: `${section.items.length} change${section.items.length === 1 ? "" : "s"}${hasAddedSkills ? " · Check each added skill" : highRisk ? " · Contains high risk changes" : ""}`,
         section: section.type,
         highRisk: section.type === "skill" ? false : highRisk,
         connected,
@@ -379,9 +380,7 @@ export default function TailoringReviewScreen() {
               connected,
             });
           }
-          // Added-skill warnings are presented in Save with the full preview.
-          if (!addedSkill)
-            warningsByChange.get(change)?.forEach((message, warningIndex) =>
+          warningsByChange.get(change)?.forEach((message, warningIndex) =>
               items.push({
                 id: `change-warning-${index}-${changeIndex}-${warningIndex}`,
                 kind: "warning",
@@ -400,6 +399,13 @@ export default function TailoringReviewScreen() {
             ? "The service reported no detailed changes. Check the current resume before saving."
             : "Detailed comparisons are unavailable. Reload the review, then check the full resume before saving.",
       });
+  }
+  if (run.step === 1) {
+    const feedback = reviewItems(run.preview.preview, "feedback");
+    if (feedback.length) {
+      items.push({ id: "engine-feedback", kind: "section", title: "Engine feedback", subtitle: "Writing, suggestions and content checks", section: "engine-feedback" });
+      if (expanded.has("engine-feedback")) feedback.forEach((item) => items.push({ id: "feedback-" + item.id, kind: "feedback", item }));
+    }
   }
   if (run.step === 2) {
     items.push({
@@ -485,6 +491,8 @@ export default function TailoringReviewScreen() {
             )}
           </View>
         );
+      case "feedback":
+        return <ReviewContent item={item.item} />;
       case "resume":
         return <ReviewContent item={item.item} document />;
       case "placement":
@@ -687,7 +695,7 @@ export default function TailoringReviewScreen() {
                 <View className="gap-4 rounded-3xl border border-border bg-card p-4">
                   <View className="flex-row gap-2">
                     {[
-                      { label: "ATS Score", value: score === null ? null : formatScore(score) },
+                      { label: "Job Match", value: score === null ? null : formatScore(score) },
                       { label: "Changes Made", value: review.change_summary.total_changes },
                       { label: "Keywords Applied", value: options.applied.length },
                     ].map(({ label, value }) => (

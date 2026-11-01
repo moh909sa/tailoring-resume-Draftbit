@@ -26,5 +26,6 @@ export function validatePdfResponse(status: number, mime: string | null, revisio
   if (status === 401 || status === 403) throw new Error("Please sign in again to preview this CV.");
   if (status < 200 || status >= 300) throw new Error("Your PDF could not be generated. Please try again.");
   if (!mime?.toLowerCase().includes("application/pdf")) throw new Error("The service did not return a PDF. Please try again.");
-  if (revision !== null && Number(revision) !== expected) throw new Error("This PDF belongs to a different saved version. Preview your CV again.");
+  if (revision === null || !/^\d+$/.test(revision)) throw new Error("The PDF version could not be verified. Please try again or contact support.");
+  if (Number(revision) !== expected) throw new Error("This PDF belongs to a different saved version. Preview your CV again.");
 }

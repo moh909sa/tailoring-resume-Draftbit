@@ -42,7 +42,7 @@ export function CvRow({
       </View>
       <View className="flex-1 gap-1.5">
         <Text className="text-h5 text-foreground" numberOfLines={2}>
-          {resume.original_filename}
+          {resume.display_name ?? resume.original_filename}
         </Text>
         <Text className="text-caption text-muted-foreground">
           {fileSize(resume.file_size_bytes)}

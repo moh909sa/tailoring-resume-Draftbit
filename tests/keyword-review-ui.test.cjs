@@ -453,7 +453,7 @@ test("connected accordions keep compact skill additions without altering verific
   );
   run.preview.review.warnings.push("Check additional.technicalSkills against your original CV.");
   list = nodes(render()).find((node) => node.type === "FlatList");
-  assert.ok(!list.props.data.some((item) => item.message === run.preview.review.warnings.at(-1)));
+  assert.ok(list.props.data.some((item) => item.message === run.preview.review.warnings.at(-1)));
   // Closing a section leaves a single fully rounded header.
   list.props
     .renderItem({ item: list.props.data.find((item) => item.section === "skill") })
@@ -523,16 +523,18 @@ test("Save keeps live metrics and directly displays the complete read-only resum
   const metrics = nodes(list.props.ListHeaderComponent).filter(
     (node) =>
       node.props.accessibilityLabel &&
-      /^(ATS Score|Changes Made|Keywords Applied):/.test(node.props.accessibilityLabel),
+      /^(Job Match|Changes Made|Keywords Applied):/.test(node.props.accessibilityLabel),
   );
   assert.deepEqual(
     metrics.map((node) => node.props.accessibilityLabel),
-    ["ATS Score: 81", "Changes Made: 6", "Keywords Applied: 2"],
+    ["Job Match: 81", "Changes Made: 6", "Keywords Applied: 2"],
   );
   assert.ok(metrics.every((node) => node.props.className.includes("flex-1")));
   assert.match(text(list.props.ListHeaderComponent), /Your original CV stays unchanged\./);
-  assert.equal(list.props.data[0].title, "Your tailored CV");
-  assert.match(list.props.data[0].body, /Read-only/);
+  const heading = list.props.data.find(item => item.id === "resume-heading");
+  assert.equal(heading.title, "Your tailored CV");
+  assert.match(heading.body, /Read-only/);
+  assert.ok(list.props.data.some(item => item.kind === "warning"));
   assert.ok(!list.props.data.some((item) => item.kind === "section"));
   const resume = list.props.data.filter((item) => item.kind === "resume");
   assert.deepEqual(
@@ -754,4 +756,32 @@ test("Save renders one continuous document with one heading per multi-entry sect
   assert.ok(output.includes("First school"));
   assert.ok(output.includes("Second school"));
   assert.equal(JSON.stringify(resume), before);
+});
+
+
+test("confirmation displays every verification warning, including warnings about added skills", () => {
+  const { run, render } = screenHarness();
+  run.step = 2;
+  run.preview.review.warnings = [grounding, "Check additional.technicalSkills against your original CV.", "2 change(s) rejected during verification"];
+  const list = nodes(render()).find(n => n.type === "FlatList");
+  assert.deepEqual(list.props.data.filter(i => i.kind === "warning").map(i => i.message), warnings.reviewWarningsForStep(run.preview.review.warnings, 2));
+  assert.ok(list.props.data.findIndex(i => i.kind === "warning") < list.props.data.findIndex(i => i.kind === "resume"));
+});
+test("engine feedback retains complete suggestions, writing findings and page-fit output", () => {
+  const preview = makeReview().preview;
+  preview.improvements = [{ suggestion: "A complete engine suggestion. ".repeat(120), lineNumber: 3 }];
+  preview.writing = { score: 66, findings: [{ path: "workExperience[0].description[0]", rule: "no_metric", excerpt: "Full exact finding" }], critic_notes: [{ path: "summary", note: "Full critic note" }] };
+  preview.bullet_selection = { bullets_before: 40, bullets_after: 40, page_fit: "skipped", max_pages: null };
+  const before = JSON.stringify(preview);
+  const feedback = previewContent.reviewItems(preview, "feedback");
+  assert.equal(feedback.find(i => i.id.startsWith("improvements")).value, preview.improvements[0]);
+  assert.equal(feedback.find(i => i.id === "writing").value, preview.writing);
+  assert.equal(feedback.find(i => i.id === "bullet_selection").value, preview.bullet_selection);
+  assert.equal(JSON.stringify(preview), before);
+});
+test("read-only resume marks hidden sections without dropping their contents", () => {
+  const items = previewContent.orderedResumeItems({ summary: "Keep this whole text", sectionMeta: [{ key: "summary", isVisible: false }] });
+  assert.equal(items[0].hidden, true);
+  assert.equal(items[0].value, "Keep this whole text");
+  assert.match(text(previewContent.ReviewContent({ item: items[0], document: true })), /Hidden in PDF/);
 });

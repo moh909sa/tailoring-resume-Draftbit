@@ -69,14 +69,20 @@ function decodeResponse(text: string): unknown {
   }
 }
 
+function temporaryAuthFailure(error: unknown): boolean {
+  return isRecord(error) && (error.name === "AuthRetryableFetchError" || error.status === 0 || (typeof error.status === "number" && error.status >= 500));
+}
+
 export async function mobileAccessToken(ownerId: string, forceRefresh = false): Promise<string> {
   if (!supabase) throw new Error("Please sign in before uploading a CV.");
   const { data, error } = await supabase.auth.getSession();
+  if (temporaryAuthFailure(error)) throw new Error("Your sign-in couldn’t be refreshed while offline. Reconnect to sync your CVs; your recovery drafts are kept on this device.");
   if (error || !data.session?.access_token || data.session.user.id !== ownerId) {
     throw new CvApiError("Please sign in to see and upload your CVs.", 401);
   }
   if (forceRefresh || (data.session.expires_at ?? 0) <= Date.now() / 1000 + 60) {
     const refreshed = await supabase.auth.refreshSession();
+    if (temporaryAuthFailure(refreshed.error)) throw new Error("Your sign-in couldn’t be refreshed while offline. Reconnect to sync your CVs; your recovery drafts are kept on this device.");
     if (
       refreshed.error ||
       !refreshed.data.session?.access_token ||
@@ -424,4 +430,13 @@ export function getTailoringProgress(
     undefined,
     8000,
   );
+}
+
+// Explicit recovery reuses the retained original; never upload a duplicate file.
+export function retryResumeProcessing(ownerId: string, resumeId: string, signal: AbortSignal): Promise<Resume> {
+  return tailoringRequest(ownerId, "/resumes/" + encodeURIComponent(resumeId) + "/retry-processing", signal, value => {
+    const resume = parseResume(value);
+    if (resume.id !== resumeId) throw new Error("The CV service returned a different original. Refresh My CVs.");
+    return resume;
+  }, "POST");
 }

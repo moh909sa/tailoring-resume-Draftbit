@@ -109,3 +109,8 @@ test('missing or unauthorized cached CVs preserve local edits without being trea
     const saved=await h.session.flush();assert.equal(saved.resume.summary,'Unsynced correction');h.session.dispose();
   }
 });
+
+
+test('PDF response must expose a verifiable saved revision before download',()=>{
+  for(const revision of [null, '', '1.0', 'abc']) assert.throws(()=>pdf.validatePdfResponse(200,'application/pdf',revision,1),/version could not be verified/);
+});

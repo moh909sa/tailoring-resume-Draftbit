@@ -27,6 +27,9 @@ export default function CvEditorScreen() {
   const [activeKey,setActiveKey] = useState<string|null>(null);
   const [openingPreview,setOpeningPreview] = useState(false);
   const [actionError,setActionError] = useState<string|null>(null);
+  const previewGeneration = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; setOpeningPreview(false); setActionError(null); setActiveKey(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
   const insets = useSafeAreaInsets();
   const sections = editor.resume ? resumeSections(editor.resume) : [];
   const section = sections.find(s=>s.key === activeKey);
@@ -37,7 +40,7 @@ export default function CvEditorScreen() {
     initialMatch.current = document.tailoring_id;
     void editor.refreshAnalysis();
   }, [view, document, editor.analysis, editor.analysisLoading, editor.saveState, editor.refreshAnalysis]);
-  const leave = () => {Keyboard.dismiss();void editor.flush();router.replace("/(tabs)/library/tailored-cvs");};
+  const leave = () => {previewGeneration.current++;Keyboard.dismiss();void editor.flush();router.replace("/(tabs)/library/tailored-cvs");};
   const openSection = (key:string) => {
     setView("edit");
     const found = sections.find(s=>key === "skills" ? /technicalSkills|professionalSkills|skills$/i.test(s.key) : key === "workExperience" ? /workExperience|experience$/.test(s.key) : s.key === key);
@@ -54,13 +57,15 @@ export default function CvEditorScreen() {
   };
   const preview = async () => {
     if(openingPreview) return;
+    const generation = ++previewGeneration.current;
     setOpeningPreview(true);setActionError(null);Keyboard.dismiss();
     try {
       const saved = await editor.flush();
+      if (!mounted.current || generation !== previewGeneration.current) return;
       if(saved) router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision)}});
       else setActionError("Save your latest changes before opening the PDF preview. Your edits are kept on this device.");
-    } catch(error) {setActionError(error instanceof Error ? error.message : "The CV could not be saved. Please try again.");}
-    finally {setOpeningPreview(false);}
+    } catch(error) {if (mounted.current && generation === previewGeneration.current) setActionError(error instanceof Error ? error.message : "The CV could not be saved. Please try again.");}
+    finally {if (mounted.current && generation === previewGeneration.current) setOpeningPreview(false);}
   };
   return <AppScreen>
     <View className="min-h-16 flex-row items-center gap-3 px-5 py-3">

@@ -436,3 +436,23 @@ test("reopening with an unconfirmed job never automatically sends another POST",
   );
   reopened.client.dispose();
 });
+
+
+test("definitively rejected submissions preserve inputs and stop looking like accepted paid jobs", async () => {
+  for (const status of [401, 404, 409, 422, 429]) {
+    const h = harness({ submit: async () => { throw Object.assign(Error("Job was not accepted"), { status }); } });
+    await h.client.restore();
+    assert.equal(h.client.start(input), true);
+    await flush(); await flush();
+    assert.equal(h.client.busy, false);
+    assert.equal(h.client.snapshot.terminalError, "Job was not accepted");
+    assert.deepEqual(h.client.snapshot.job.input, input);
+    assert.equal(JSON.parse(h.shared.storage).rejectedMessage, "Job was not accepted");
+    await h.time.advance(20000);
+    assert.equal(h.shared.posts.length, 1, "recovery cannot automatically submit paid work");
+    assert.equal(h.client.start({ ...input, jobDescription: "A corrected full description that can be used for the next explicit submission." }), true);
+    await flush(); await flush();
+    assert.equal(h.shared.posts.length, 2);
+    h.client.dispose();
+  }
+});

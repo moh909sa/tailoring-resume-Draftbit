@@ -14,6 +14,7 @@ export type SavedTailoringJob = {
   status: TailoringProgress["status"] | "unknown";
   delivered: boolean;
   previousJobId: string | null;
+  rejectedMessage?: string;
 };
 export type DurableJobState = {
   job: SavedTailoringJob | null;
@@ -70,6 +71,7 @@ function readSavedJob(raw: string | null): SavedTailoringJob | null {
     status: value.status as SavedTailoringJob["status"],
     delivered: value.delivered === true,
     previousJobId: validId(value.previousJobId) ? value.previousJobId : null,
+    ...(typeof value.rejectedMessage === "string" ? { rejectedMessage: value.rejectedMessage } : {}),
   };
 }
 
@@ -108,6 +110,7 @@ export class DurableTailoringJob {
       !!(
         job &&
         !job.delivered &&
+        !job.rejectedMessage &&
         (isPending(job.status) || job.status === "unknown" || job.status === "succeeded")
       )
     );
@@ -185,7 +188,9 @@ export class DurableTailoringJob {
   retry() {
     const job = this.state.job;
     if (this.disposed || this.state.submitting || this.state.recovering || this.retrieving) return;
-    if (job?.status === "unknown" && job.input) {
+    if (job?.rejectedMessage && job.input) {
+      this.start(job.input);
+    } else if (job?.status === "unknown" && job.input) {
       this.change({ submitting: true });
       void this.submitSaved();
     } else if (job && (job.status === "failed" || job.status === "interrupted") && job.input)
@@ -209,8 +214,14 @@ export class DurableTailoringJob {
       const accepted = await this.deps.submit(job.input, job.progressId, controller.signal);
       if (this.disposed) return;
       await this.adopt(accepted, job.input);
-    } catch {
-      if (!this.disposed)
+    } catch (error) {
+      const status = typeof error === "object" && error !== null && "status" in error ? error.status : null;
+      const rejected = persisted && typeof status === "number" && [400, 401, 403, 404, 409, 413, 422, 429].includes(status);
+      if (!this.disposed && rejected) {
+        const message = error instanceof Error ? error.message : "The service could not accept this job. Check your inputs and try again.";
+        this.change({ job: { ...job, rejectedMessage: message }, terminalError: message, connectionError: null });
+        await this.persist().catch(() => undefined);
+      } else if (!this.disposed)
         this.change({
           connectionError: persisted
             ? "We couldn’t confirm the job submission. Your job reference is saved. Check its status before trying again."
@@ -282,6 +293,8 @@ export class DurableTailoringJob {
             ? (saved?.input ?? null)
             : null,
         );
+      else if (saved?.rejectedMessage)
+        this.change({ terminalError: saved.rejectedMessage, connectionError: null });
       else if (saved && !saved.delivered)
         this.change({
           connectionError:

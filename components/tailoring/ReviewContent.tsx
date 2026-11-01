@@ -16,6 +16,7 @@ const labels: Record<string, string> = {
   keyword_placements: "Keywords included",
   forced_keywords: "Additional keywords",
   refinement_stats: "Keyword refinement",
+  bullet_selection: "Content and page fit",
   improvements: "Suggestions",
   detailed_changes: "Changes",
   overall_score: "ATS match score",
@@ -65,6 +66,7 @@ export type ReviewItem = {
   continuation?: boolean;
   profile?: boolean;
   custom?: boolean;
+  hidden?: boolean;
 };
 function entries(key: string, value: JsonValue | undefined): ReviewItem[] {
   if (!hasContent(value)) return [];
@@ -143,7 +145,7 @@ export function orderedResumeItems(resume: JsonObject): ReviewItem[] {
           ? exact.displayName
           : (titles[section.field] ??
             (customId ? "Additional section" : readableLabel(section.field)));
-      return { ...section, label, order, rank, index };
+      return { ...section, label, order, rank, index, hidden: meta?.isVisible === false };
     });
   positioned.sort((a, b) => {
     // Identity and contacts always introduce the CV. Honor explicit original
@@ -163,20 +165,23 @@ export function orderedResumeItems(resume: JsonObject): ReviewItem[] {
       continuation: index > 0,
       profile: section.rank === 0,
       custom: section.custom,
+      hidden: section.hidden,
     })),
   );
 }
 
 export function reviewItems(
   preview: JsonObject,
-  tab: "resume" | "analysis" | "changes",
+  tab: "resume" | "analysis" | "changes" | "feedback",
 ): ReviewItem[] {
   if (tab === "resume") {
     const resume = preview.resume_preview;
     return isJsonObject(resume) ? orderedResumeItems(resume) : [];
   }
   const keys =
-    tab === "analysis"
+    tab === "feedback"
+      ? ["improvements", "writing", "refinement_stats", "bullet_selection"]
+      : tab === "analysis"
       ? ["ats_score", "keyword_placements", "forced_keywords", "writing", "refinement_stats"]
       : ["detailed_changes", "diff_summary", "improvements"];
   return keys.flatMap((key) => entries(key, preview[key]));
@@ -312,6 +317,7 @@ export function ReviewContent({
               : item.label}
           </Text>
         ) : null}
+        {item.hidden && !item.continuation ? <Text className="text-caption text-muted-foreground">Hidden in PDF</Text> : null}
         {isChange ? (
           <View className="gap-4">
             {hasContent(value.original_value) ? (

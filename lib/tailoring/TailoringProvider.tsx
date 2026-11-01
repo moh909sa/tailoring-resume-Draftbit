@@ -141,7 +141,7 @@ function restoredSnapshot(
   value: unknown,
 ): Pick<
   RunState,
-  "tailoringId" | "lastPreviewId" | "input" | "step" | "selectedKeywords" | "pendingJobReview"
+  "tailoringId" | "lastPreviewId" | "input" | "step" | "selectedKeywords" | "pendingJobReview" | "saved"
 > | null {
   if (!isRecord(value) || typeof value.tailoringId !== "string" || !value.tailoringId) return null;
   const input =
@@ -166,7 +166,8 @@ function restoredSnapshot(
     : [];
   return {
     tailoringId: value.tailoringId,
-    pendingJobReview: value.pendingJobReview === true,
+    pendingJobReview: value.pendingJobReview === true && value.saved !== true,
+    saved: value.saved === true,
     lastPreviewId: typeof value.previewId === "string" ? value.previewId : null,
     input,
     step: value.step === 1 || value.step === 2 ? value.step : 0,
@@ -177,6 +178,7 @@ function restoredSnapshot(
 function reviewSnapshot(run: RunState): string {
   return JSON.stringify({
     tailoringId: run.tailoringId,
+    saved: run.saved,
     previewId: run.lastPreviewId,
     input: run.input,
     step: run.step,
@@ -212,7 +214,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
     const key = storageKey(run.ownerId);
     // Persist only the draft pointer, form inputs, step and explicit choices.
     // Resume contents and auth tokens are not copied into this cache.
-    const value = run.tailoringId && !run.saved ? reviewSnapshot(run) : null;
+    const value = run.tailoringId ? reviewSnapshot(run) : null;
     writes.current = writes.current
       .then(() => (value ? AsyncStorage.setItem(key, value) : AsyncStorage.removeItem(key)))
       .catch(() => undefined);
@@ -240,6 +242,8 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
         ...state,
         ownerId,
         status: "success",
+        saved: false,
+        confirmation: null,
         tailoringId: preview.tailoring_id,
         lastPreviewId: preview.preview.preview_id,
         preview,
@@ -260,12 +264,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     request.current?.abort();
     request.current = null;
-    const previousOwner = restoredOwner.current;
     restoredOwner.current = null;
-    if (previousOwner && previousOwner !== ownerId)
-      writes.current = writes.current
-        .then(() => AsyncStorage.removeItem(storageKey(previousOwner)))
-        .catch(() => undefined);
     update(() => ({ ...emptyRun, ownerId, hydrating: !!ownerId }));
     let active = true;
     if (!ownerId) return;
@@ -368,7 +367,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
         const raw = await AsyncStorage.getItem(storageKey(ownerId));
         const restored = restoredSnapshot(raw ? (JSON.parse(raw) as unknown) : null);
         if (active && owner.current === ownerId && restored)
-          update((state) => ({ ...state, ...restored, status: "success", needsReload: true }));
+          update((state) => ({ ...state, ...restored, status: "success", needsReload: !restored.saved }));
       } catch {
         /* The server can recover jobs without a device cache. */
       } finally {
@@ -412,7 +411,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
   const reloadReview = useCallback(
     async (requestedId?: string): Promise<void> => {
       const id = requestedId ?? current.current.tailoringId;
-      if (!id || !ownerId || request.current || current.current.hydrating || current.current.saved)
+      if (!id || !ownerId || request.current || current.current.hydrating || (current.current.saved && id === current.current.tailoringId))
         return;
       const controller = new AbortController();
       request.current = controller;

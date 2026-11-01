@@ -190,3 +190,47 @@ test("web PDF transport pins revision, validates response, and download uses the
     await service.shareEditorPdf(artifact);assert.equal(clicked,true);assert.equal(downloadHref,artifact.uri);
   } finally {await artifact?.dispose();global.fetch=oldFetch;global.document=oldDocument;}
 });
+
+
+test("Tailor reopens the same review or saved CV without starting another AI job", async () => {
+  for(const saved of [false,true]) {
+    const h=harness();let starts=0;
+    const input={resumeId:SOURCE,filename:'Original.pdf',jobDescription:'Full exact job description. '.repeat(5).trim()};
+    const run={input,tailoringId:TAILORED,status:'success',saved,hydrating:false,jobRecovering:false,jobConnectionError:null,start:()=>{starts++;return true;}};
+    h.open('app/(tabs)/tailor.tsx',{
+      '@/lib/tailoring/TailoringProvider':{useTailoring:()=>run},
+      '@/lib/tailoring/useTailorForm':{useTailorForm:()=>({form:{selectedId:SOURCE,description:input.jobDescription},loading:false,saving:false,error:null,update:()=>{}})},
+      '@/lib/cv/useMyCv':{useMyCv:()=>({resumes:[{id:SOURCE,original_filename:'Original.pdf',processing_status:'ready',recovery_required:false}],loading:false})},
+      '@/components/cv/CvSelectionSheet':{CvSelectionSheet:'SelectionSheet'},
+      '@/components/ui/textarea':{Textarea:'Textarea'},
+    });
+    h.button(saved?'Open saved CV':'Continue review').props.onPress();
+    assert.equal(starts,0);
+    assert.deepEqual(h.calls.at(-1),['push',saved?{pathname:'/cv-editor/[id]',params:{id:TAILORED}}:{pathname:'/tailoring/review',params:{tailoringId:TAILORED}}]);h.dispose();
+  }
+});
+
+
+test("Job Match does not turn role keywords into invented skills, and confirmed missing skills can be restored", () => {
+  const h=harness();const added=[];
+  // Use this component's existing hook harness to retain its disclosure state.
+  h.mocks.react.useState = value => [value,()=>{}];
+  const component=load('components/editor/JobMatch.tsx',h.mocks).JobMatch;
+  const tree=component({analysis:{status:'current',revision:1,score:{overall_score:70,sub_scores:{},recommendations:[]},missing_keywords:['Senior engineer','Python'],matched_keywords:[],required_skills:['Python'],preferred_skills:[],total_keywords:2,matched_count:0},revision:1,dirty:false,loading:false,jobDescription:'Full job',confirmedSkills:['Python'],onAddSkill:skill=>added.push(skill),onRefresh:()=>{},onEdit:()=>{}});
+  const buttons=nodes(tree).filter(n=>n.props.accessibilityLabel?.includes('add to Skills'));
+  assert.equal(buttons.length,1);buttons[0].props.onPress();assert.deepEqual(added,['Python']);
+  assert.match(text(tree),/Senior engineer/);assert.match(text(tree),/Job keyword/);
+});
+
+test("leaving while a save is in flight cannot reopen a late PDF preview", async () => {
+  const h=harness();let release;
+  const pending=new Promise(resolve=>release=resolve);
+  const document=makeDocument();
+  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saving',problem:null,analysis:null,analysisLoading:false,flush:()=>pending,updateResume(){},reload(){},resolveConflict(){},refreshAnalysis(){}};
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+  h.button('Preview PDF').props.onPress();await tick();
+  h.find(n=>n.props?.accessibilityLabel==='Back to saved CVs').props.onPress();
+  release(document);await h.pump();
+  assert.ok(!h.calls.some(([method])=>method==='push'));
+  assert.equal(h.calls.at(-1)[1],'/(tabs)/library/tailored-cvs');h.dispose();
+});

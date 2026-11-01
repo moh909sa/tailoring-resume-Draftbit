@@ -20,7 +20,7 @@ export type JobMatchProps = {
 
 const metricNames: Record<string, string> = {
   keyword_match: "Job keywords", keyword_coverage: "Job keywords", keywords: "Job keywords",
-  skills: "Skills alignment", skills_match: "Skills alignment", skill_match: "Skills alignment", skill_coverage: "Skills alignment",
+  skills_coverage: "Skills alignment", skills: "Skills alignment", skills_match: "Skills alignment", skill_match: "Skills alignment", skill_coverage: "Skills alignment",
   title_alignment: "Role alignment", title_match: "Role alignment", title: "Role alignment",
   section_completeness: "Section completeness", sections: "Section completeness",
   date_consistency: "Date consistency", dates: "Date consistency",
@@ -33,6 +33,7 @@ export function JobMatch({ analysis, revision, dirty, loading, error, jobDescrip
   const score = analysis?.score;
   const confirmed = new Set(confirmedSkills.map(skill => skill.toLocaleLowerCase()));
   const required = new Set(analysis?.required_skills.map(skill => skill.toLocaleLowerCase()));
+  const skillTerms = new Set([...(analysis?.required_skills ?? []), ...(analysis?.preferred_skills ?? [])].map(skill => skill.toLocaleLowerCase()));
   const missing = [...new Set(analysis?.missing_keywords ?? [])];
   return (
     <View className="gap-5">
@@ -45,7 +46,7 @@ export function JobMatch({ analysis, revision, dirty, loading, error, jobDescrip
           <Text className="text-h1 text-foreground">{score ? Math.round(score.overall_score) : "—"}</Text>
           {score ? <Text className="pb-1 text-body text-muted-foreground">/ 100{current ? "" : " · previous result"}</Text> : null}
         </View>
-        <Text className="text-body text-muted-foreground">{current ? "An estimate of how clearly this CV reflects the job description. It does not predict an employer’s decision." : analysis?.status === "unavailable" ? analysis.reason || "Job-match analysis is unavailable for this document." : "Update the match after editing to check your latest saved CV against this job."}</Text>
+        <Text className="text-body text-muted-foreground">{current ? "An estimate of how clearly this CV reflects the job description. It does not predict an employer’s decision." : analysis?.status === "unavailable" ? analysis.reason || "Job-match analysis is unavailable for this document." : "Update the match after editing to check your latest saved CV against this job. Updating does not generate another CV."}</Text>
         {current && analysis ? <Text className="text-caption text-muted-foreground">{analysis.matched_count} of {analysis.total_keywords} job keywords found · saved version {analysis.revision}</Text> : null}
         <Button disabled={loading} onPress={onRefresh} className="rounded-xl">
           {loading ? <ActivityIndicator accessibilityLabel="Updating job match" /> : <Text>{dirty ? "Save & update match" : "Update match"}</Text>}
@@ -74,7 +75,7 @@ export function JobMatch({ analysis, revision, dirty, loading, error, jobDescrip
                 <Text className="flex-1 text-body text-foreground">{skill}</Text>
                 {required.has(skill.toLocaleLowerCase()) ? <Text className="text-caption text-muted-foreground">Required in job</Text> : null}
               </View>
-              {added ? <View className="flex-row items-center gap-2"><Icon name="Check" className="h-4 w-4 text-success" /><Text className="text-caption text-success">You confirmed this skill</Text></View> : <Button variant="secondary" size="sm" className="self-start rounded-lg" onPress={() => onAddSkill(skill)} accessibilityLabel={`I have ${skill}, add to Skills`}><Text>I have this · Add to Skills</Text></Button>}
+              {skillTerms.has(skill.toLocaleLowerCase()) ? <View className="gap-2">{added ? <Text className="text-caption text-muted-foreground">You previously confirmed this skill. It is missing from this version’s analysis.</Text> : null}<Button variant="secondary" size="sm" className="self-start rounded-lg" onPress={() => onAddSkill(skill)} accessibilityLabel={`I have ${skill}, add to Skills`}><Text>{added ? "Add to Skills" : "I have this · Add to Skills"}</Text></Button></View> : <Text className="text-caption leading-5 text-muted-foreground">Job keyword · use this wording in your experience only where it accurately fits.</Text>}
             </View>;
           })}
         </View>

@@ -4,7 +4,7 @@ import { useFocusEffect } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { createCvFormData } from "@/lib/cv/file";
-import { deleteResume, listResumes, uploadResume } from "@/lib/cv/api";
+import { deleteResume, listResumes, uploadResume, retryResumeProcessing } from "@/lib/cv/api";
 import { CV_MIME_TYPES, type CvNotice, type Resume, type UploadProgress } from "@/lib/cv/types";
 
 type ListState = {
@@ -24,6 +24,8 @@ export function useMyCv() {
   const [notice, setNotice] = useState<CvNotice | null>(null);
   const [picking, setPicking] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const retryRequest = useRef<AbortController | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteRequest = useRef<AbortController | null>(null);
@@ -68,6 +70,7 @@ export function useMyCv() {
     setUploadProgress(null);
     setPicking(false);
     setDeletingId(null);
+    setRetryingId(null);
     setDeleteError(null);
     deleteRequest.current = null;
     setRefreshing(false);
@@ -80,6 +83,8 @@ export function useMyCv() {
       listRequest.current?.abort();
       uploadRequest.current?.abort();
       deleteRequest.current?.abort();
+      retryRequest.current?.abort();
+      retryRequest.current = null;
       foreground.remove();
     };
   }, [ownerId, refresh]);
@@ -222,6 +227,28 @@ export function useMyCv() {
     [ownerId, refresh],
   );
 
+  const retryProcessing = useCallback(async (resumeId: string) => {
+    if (!ownerId || retryRequest.current || busy.current || deleteRequest.current) return;
+    const controller = new AbortController();
+    retryRequest.current = controller;
+    setRetryingId(resumeId);
+    setNotice(null);
+    try {
+      const saved = await retryResumeProcessing(ownerId, resumeId, controller.signal);
+      if (controller.signal.aborted || owner.current !== ownerId) return;
+      setList(previous => previous.ownerId === ownerId ? { ...previous, resumes: previous.resumes.map(item => item.id === saved.id ? saved : item) } : previous);
+      setNotice({ tone: saved.processing_status === "failed" || saved.recovery_required ? "info" : "success", message: saved.processing_status === "ready" && !saved.recovery_required ? "Your CV is ready to tailor." : saved.processing_status === "failed" || saved.recovery_required ? "Processing could not finish. Your original is still saved; please try again later." : "Processing has restarted. Your original stays unchanged." });
+    } catch (error) {
+      if (!controller.signal.aborted && owner.current === ownerId) setNotice({ tone: "error", message: (error instanceof Error ? error.message : "Processing could not be restarted.") + " Check the updated status before retrying." });
+    } finally {
+      if (retryRequest.current === controller && owner.current === ownerId) {
+        retryRequest.current = null;
+        setRetryingId(null);
+        await refresh();
+      }
+    }
+  }, [ownerId, refresh]);
+
   return {
     resumes: visibleList.resumes,
     listError: visibleList.error,
@@ -234,6 +261,8 @@ export function useMyCv() {
     refresh,
     upload,
     remove,
+    retryProcessing,
+    retryingId,
     deletingId,
     deleteError,
     clearDeleteError: () => setDeleteError(null),

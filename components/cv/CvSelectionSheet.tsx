@@ -54,24 +54,29 @@ export function CvSelectionSheet({
         renderItem={({ item }) => (
           <Pressable
             onPress={() => onSelect(item.id)}
+            disabled={item.processing_status !== "ready" || item.recovery_required}
             accessibilityRole="button"
             accessibilityLabel={"Choose " + item.original_filename}
-            accessibilityState={{ selected: selectedId === item.id }}
+            accessibilityState={{ selected: selectedId === item.id, disabled: item.processing_status !== "ready" || item.recovery_required }}
             className="active:opacity-70"
           >
             <CvRow resume={item} selected={selectedId === item.id} />
           </Pressable>
         )}
         ListHeaderComponent={
-          error ? (
+          <View className="mb-4 gap-3">
+            <Text className="text-body leading-6 text-muted-foreground">Choose a CV marked Ready. If processing failed, retry it in My CVs.</Text>
+          {error ? (
             <View className="mb-5 gap-3">
               <Notice tone="error" message={error} />
               <Button variant="outline" onPress={onRefresh}>
                 <Text>Try again</Text>
               </Button>
             </View>
-          ) : null
+          ) : null}
+          </View>
         }
+        ListFooterComponent={resumes.length ? <Button variant="outline" onPress={onUpload} className="mt-3 rounded-xl"><Text>Manage or upload CVs</Text></Button> : null}
         ListEmptyComponent={
           loading ? (
             <View className="items-center gap-3 py-12">

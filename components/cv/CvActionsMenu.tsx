@@ -15,11 +15,13 @@ export function CvActionsMenu({
   disabled,
   deleting,
   onDelete,
+  onRetry,
 }: {
   filename: string;
   disabled: boolean;
   deleting: boolean;
   onDelete: () => void;
+  onRetry?: () => void;
 }) {
   const { theme } = useTheme();
   return (
@@ -41,6 +43,10 @@ export function CvActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} className="rounded-xl p-1.5">
+        {onRetry ? <DropdownMenuItem onPress={onRetry} className="min-h-11 rounded-lg px-3">
+          <LucideIcon name="RefreshCw" size={17} className="text-primary" />
+          <Text className="text-body text-primary">Retry processing</Text>
+        </DropdownMenuItem> : null}
         <DropdownMenuItem onPress={onDelete} className="min-h-11 rounded-lg px-3">
           <LucideIcon name="Trash2" size={17} className="text-destructive" />
           <Text className="text-body text-destructive">Delete CV</Text>

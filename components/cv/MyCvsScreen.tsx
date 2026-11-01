@@ -36,7 +36,7 @@ export default function MyCvsScreen() {
   const [resumeToDelete, setResumeToDelete] = useState<Resume | null>(null);
   useEffect(() => setResumeToDelete(null), [session?.user?.id]);
   const signedIn = !!session?.user?.id;
-  const busy = cv.picking || !!cv.uploadProgress;
+  const busy = cv.picking || !!cv.uploadProgress || !!cv.retryingId;
 
   function chooseFile() {
     if (!signedIn) {
@@ -103,9 +103,10 @@ export default function MyCvsScreen() {
             actions={
               <CvActionsMenu
                 filename={item.original_filename}
-                disabled={!!cv.deletingId || signingOut}
+                disabled={!!cv.deletingId || busy || signingOut}
                 deleting={cv.deletingId === item.id}
                 onDelete={() => requestDelete(item)}
+                onRetry={item.processing_status === "failed" || item.recovery_required ? () => void cv.retryProcessing(item.id) : undefined}
               />
             }
           />
@@ -144,6 +145,7 @@ export default function MyCvsScreen() {
                 </View>
               </View>
             ) : null}
+            {cv.retryingId ? <View className="flex-row items-center gap-3 rounded-2xl bg-primary/5 p-4"><ActivityIndicator color={theme.colors.primary}/><Text className="flex-1 text-body text-foreground">Retrying processing of your saved original…</Text></View> : null}
             {cv.notice ? <Notice {...cv.notice} onDismiss={cv.dismissNotice} /> : null}
             {authError ? <Notice tone="error" message={authError} /> : null}
             {signOutError ? <Notice tone="error" message={signOutError} /> : null}
