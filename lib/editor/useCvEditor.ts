@@ -7,13 +7,16 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { getEditorDocument, saveEditorDocument, recalculateEditorAnalysis } from "./api";
 import { parseEditorDocument, type JsonObject } from "./types";
 import { CvEditorSession, editorStorageKey, emptyEditorState, type EditorState } from "./session";
+import { readEditorRoute } from "./routes";
 
 // Old network completions may finish after navigating away. Fence writes by
 // session generation and serialize storage so they cannot erase a newer draft.
 const generations = new Map<string, number>();
 const storageWrites = new Map<string, Promise<unknown>>();
 
-export function useCvEditor(tailoringId: string) {
+export function useCvEditor(routeId: string | string[] | undefined) {
+  const route = readEditorRoute({ id: routeId });
+  const tailoringId = route.id ?? "";
   const {session, loading: authLoading} = useAuth();
   const ownerId = session?.user.id;
   const key = ownerId && tailoringId ? editorStorageKey(ownerId, tailoringId) : "";
@@ -45,10 +48,15 @@ export function useCvEditor(tailoringId: string) {
     return () => { live=false; listener.remove(); manager.dispose(); if(current.current?.manager === manager) current.current=null; };
   }, [key,ownerId,tailoringId]);
   useFocusEffect(useCallback(() => { const active = current.current; if(active?.key === key) void active.manager.refresh(); }, [key]));
-  const value = snapshot.key === key && key ? snapshot.value : {...emptyEditorState(),loading:authLoading || !!ownerId,error:!authLoading && !ownerId ? "Sign in to open your saved CV." : null};
+  const value = snapshot.key === key && key ? snapshot.value : {
+    ...emptyEditorState(),
+    loading: !route.error && (authLoading || !!ownerId),
+    error: route.error ?? (!authLoading && !ownerId ? "Sign in to open your saved CV." : null),
+  };
   const getManager = () => current.current?.key === key ? current.current.manager : null;
   return {
     ...value,
+    routeError: route.error,
     updateResume: (resume: JsonObject, skills?: string[]) => getManager()?.update(resume,skills),
     updateConfirmedSkills: (skills: string[]) => {const m=getManager();if(m?.snapshot.resume) m.update(m.snapshot.resume,skills);},
     reload: async () => {await getManager()?.refresh();},

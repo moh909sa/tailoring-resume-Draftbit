@@ -6,6 +6,7 @@ import { AppScreen } from "@/components/layout/AppScreen";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/cv/Notice";
+import { AccountSheet } from "@/components/cv/AccountSheet";
 import LucideIcon from "@/lib/icons/LucideIcon";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useCvEditor } from "@/lib/editor/useCvEditor";
@@ -18,9 +19,10 @@ import { cn } from "@/lib/utils";
 const statusLabels = {saved:"All changes saved",saving:"Saving changes…",local:"Saved on this device · waiting to sync",error:"Changes need syncing",conflict:"Another saved version is available"};
 
 export default function CvEditorScreen() {
-  const {id} = useLocalSearchParams<{id:string}>();
+  const {id} = useLocalSearchParams<{id?:string|string[]}>();
   const {session} = useAuth();
-  const editor = useCvEditor(typeof id === "string" ? id : "");
+  const editor = useCvEditor(id);
+  const [showSignIn,setShowSignIn] = useState(false);
   const [view,setView] = useState<"edit"|"match">("edit");
   const [activeKey,setActiveKey] = useState<string|null>(null);
   const [openingPreview,setOpeningPreview] = useState(false);
@@ -35,7 +37,7 @@ export default function CvEditorScreen() {
     initialMatch.current = document.tailoring_id;
     void editor.refreshAnalysis();
   }, [view, document, editor.analysis, editor.analysisLoading, editor.saveState, editor.refreshAnalysis]);
-  const leave = () => {Keyboard.dismiss();void editor.flush();if(router.canGoBack()) router.back();else router.replace("/(tabs)/library/tailored-cvs");};
+  const leave = () => {Keyboard.dismiss();void editor.flush();router.replace("/(tabs)/library/tailored-cvs");};
   const openSection = (key:string) => {
     setView("edit");
     const found = sections.find(s=>key === "skills" ? /technicalSkills|professionalSkills|skills$/i.test(s.key) : key === "workExperience" ? /workExperience|experience$/.test(s.key) : s.key === key);
@@ -66,7 +68,7 @@ export default function CvEditorScreen() {
       <View className="flex-1"><Text accessibilityRole="header" className="text-h3 text-foreground">CV Editor</Text><Text numberOfLines={1} className="text-caption text-muted-foreground">{[document?.job.title,document?.job.company].filter(Boolean).join(" · ") || "Your tailored CV"}</Text></View>
     </View>
     {editor.loading ? <View className="flex-1 items-center justify-center gap-4"><ActivityIndicator/><Text className="text-body text-muted-foreground">Opening your saved CV…</Text></View>
-    : !document || !editor.resume ? <View className="flex-1 justify-center gap-4 px-6"><Notice tone="error" message={editor.error ?? "This CV could not be opened."}/><Button onPress={()=>session ? void editor.reload() : router.replace("/(tabs)/library/my-cvs")}><Text>{session ? "Try again" : "Go to My CVs to sign in"}</Text></Button></View>
+    : !document || !editor.resume || editor.error ? <View className="flex-1 justify-center gap-4 px-6"><Notice tone="error" message={editor.error ?? "This CV could not be opened."}/>{!editor.routeError ? <Button onPress={()=>session && editor.accessStatus !== 401 ? void editor.reload() : setShowSignIn(true)}><Text>{session && editor.accessStatus !== 401 ? "Try again" : "Sign in"}</Text></Button>:null}<Button variant="outline" onPress={leave}><Text>Return to Tailored CVs</Text></Button></View>
     : <>
       <View className="gap-4 px-6 pb-4">
         <View accessibilityLiveRegion="polite" className="flex-row items-center gap-2">
@@ -91,5 +93,6 @@ export default function CvEditorScreen() {
       <View className="gap-2 border-t border-border bg-background px-6 pt-4" style={{paddingBottom:Math.max(insets.bottom,16)}}><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="min-h-14 flex-row gap-2 rounded-2xl">{openingPreview ? <ActivityIndicator/> : <LucideIcon name="FileText" size={20} className="text-primary-foreground"/>}<Text>{openingPreview ? "Saving your CV…" : "Preview PDF"}</Text></Button></View>
       {section ? <SectionEditor key={section.key} section={section} saveLabel={statusLabels[editor.saveState]} onChange={(value:JsonValue)=>{if(editor.resume) editor.updateResume(replaceSection(editor.resume,section.key,value));}} onClose={()=>{setActiveKey(null);void editor.flush();}}/> : null}
     </>}
+    <AccountSheet visible={showSignIn} onClose={()=>{setShowSignIn(false);void editor.reload();}}/>
   </AppScreen>;
 }

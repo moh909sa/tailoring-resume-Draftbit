@@ -4,6 +4,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { getEditorDocument } from "@/lib/editor/api";
+import { readEditorRoute } from "@/lib/editor/routes";
 import { loadEditorPdf, shareEditorPdf } from "@/lib/editor/pdf";
 import type { EditorPdf, PdfPageSize } from "@/lib/editor/pdfTypes";
 import { PdfViewer } from "@/components/editor/PdfViewer";
@@ -12,12 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import Icon from "@/lib/icons/LucideIcon";
 
-type Preview = { ownerId: string; id: string; pdf: EditorPdf };
+type Preview = { ownerId: string; id: string; pageSize: PdfPageSize; requestedRevision: number | undefined; pdf: EditorPdf };
 
 export default function CvPdfPreview() {
-  const params = useLocalSearchParams<{ id: string; revision?: string }>();
-  const id = Array.isArray(params.id) ? params.id[0] : params.id;
-  const expectedRevision = params.revision ? Number(params.revision) : undefined;
+  const params = useLocalSearchParams<{ id?: string | string[]; revision?: string | string[] }>();
+  const route = readEditorRoute(params);
+  const id = route.id;
+  const expectedRevision = route.revision;
+  const routeError = route.error;
   const router = useRouter();
   const { session, loading: authLoading } = useAuth();
   const ownerId = session?.user.id;
@@ -28,18 +31,18 @@ export default function CvPdfPreview() {
   const [sharing, setSharing] = useState(false);
   const [viewError, setViewError] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const pdf = preview && preview.ownerId === ownerId && preview.id === id ? preview.pdf : null;
+  const pdf = !routeError && preview && preview.ownerId === ownerId && preview.id === id && preview.pageSize === pageSize && preview.requestedRevision === expectedRevision ? preview.pdf : null;
   const goBack = () => {
-    if (router.canGoBack()) router.back();
-    else if (id) router.replace({ pathname: "/cv-editor/[id]", params: { id } });
-    else router.replace("/(tabs)/library/tailored-cvs");
+    if (!id) router.replace("/(tabs)/library/tailored-cvs");
+    else if (routeError || !router.canGoBack()) router.replace({ pathname: "/cv-editor/[id]", params: { id } });
+    else router.back();
   };
 
   useEffect(() => {
     setPreview(null);
     setError(null);
     setViewError(false);
-    if (!ownerId || !id) return;
+    if (!ownerId || !id || routeError) { setLoading(false); return; }
     const controller = new AbortController();
     let current = true;
     let artifact: EditorPdf | null = null;
@@ -52,7 +55,7 @@ export default function CvPdfPreview() {
         const loadedPdf = await loadEditorPdf(ownerId, id, document.revision, pageSize, controller.signal);
         artifact = loadedPdf;
         if (!current || controller.signal.aborted) { await loadedPdf.dispose(); return; }
-        setPreview({ ownerId, id, pdf: loadedPdf });
+        setPreview({ ownerId, id, pageSize, requestedRevision: expectedRevision, pdf: loadedPdf });
       } catch (cause) {
         if (current) setError(controller.signal.aborted ? "Generating your PDF took too long. Please try again." : cause instanceof Error ? cause.message : "Your PDF could not be loaded. Please try again.");
       } finally {
@@ -66,7 +69,7 @@ export default function CvPdfPreview() {
       controller.abort();
       void artifact?.dispose().catch(() => undefined);
     };
-  }, [ownerId, id, expectedRevision, pageSize, attempt]);
+  }, [ownerId, id, expectedRevision, pageSize, routeError, attempt]);
 
   async function download() {
     if (!pdf || sharing) return;
@@ -89,10 +92,10 @@ export default function CvPdfPreview() {
           </View>
         </View>
 
-        {authLoading || (ownerId && (loading || (!pdf && !error))) ? <View className="flex-1 items-center justify-center gap-4 px-8"><ActivityIndicator size="large" /><Text className="text-body text-muted-foreground">Preparing your saved CV…</Text></View> : !ownerId ? <View className="flex-1 items-center justify-center gap-4 px-8"><Text className="text-center text-body text-muted-foreground">Please sign in to preview your CV.</Text><Button onPress={goBack}><Text>Return to editor</Text></Button></View> : pdf ? <View className="flex-1 overflow-hidden bg-muted">{viewError ? <View className="flex-1 items-center justify-center px-8"><Text className="text-center text-body text-muted-foreground">The preview could not be displayed. Your PDF is ready to download below.</Text></View> : <PdfViewer uri={pdf.uri} onError={() => setViewError(true)} />}</View> : <View className="flex-1 items-center justify-center gap-4 px-8"><Icon name="FileText" className="h-10 w-10 text-muted-foreground" /><Text className="text-center text-h4 text-foreground">PDF unavailable</Text><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{error || "Your PDF could not be loaded."}</Text><Button onPress={() => setAttempt(value => value + 1)}><Text>Try again</Text></Button><Button variant="ghost" onPress={goBack}><Text>Return to editor</Text></Button></View>}
+        {routeError ? <View className="flex-1 items-center justify-center gap-4 px-8"><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{routeError}</Text><Button onPress={goBack}><Text>{id ? "Return to editor" : "Return to Tailored CVs"}</Text></Button></View> : authLoading || (ownerId && (loading || (!pdf && !error))) ? <View className="flex-1 items-center justify-center gap-4 px-8"><ActivityIndicator size="large" /><Text className="text-body text-muted-foreground">Preparing your saved CV…</Text></View> : !ownerId ? <View className="flex-1 items-center justify-center gap-4 px-8"><Text className="text-center text-body text-muted-foreground">Please sign in to preview your CV.</Text><Button onPress={goBack}><Text>Return to editor</Text></Button></View> : pdf ? <View className="flex-1 overflow-hidden bg-muted">{viewError ? <View className="flex-1 items-center justify-center px-8"><Text className="text-center text-body text-muted-foreground">The preview could not be displayed. Your PDF is ready to download below.</Text></View> : <PdfViewer uri={pdf.uri} onError={() => setViewError(true)} />}</View> : <View className="flex-1 items-center justify-center gap-4 px-8"><Icon name="FileText" className="h-10 w-10 text-muted-foreground" /><Text className="text-center text-h4 text-foreground">PDF unavailable</Text><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{error || "Your PDF could not be loaded."}</Text><Button onPress={() => setAttempt(value => value + 1)}><Text>Try again</Text></Button><Button variant="ghost" onPress={goBack}><Text>Return to editor</Text></Button></View>}
 
         <View className="gap-3 border-t border-border px-5 py-4">
-          {pdf && ownerId ? <PdfReadability key={pdf.uri} ownerId={ownerId} id={id} revision={pdf.revision} pageSize={pageSize} /> : null}
+          {pdf && ownerId && id ? <PdfReadability key={pdf.uri} ownerId={ownerId} id={id} revision={pdf.revision} pageSize={pageSize} /> : null}
           {pdf && error ? <Text accessibilityRole="alert" className="text-body text-destructive">{error}</Text> : null}
           <Button className="flex-row gap-2 rounded-xl" disabled={!pdf || loading || sharing} onPress={() => void download()}>{sharing ? <ActivityIndicator /> : <Icon name="Download" className="h-5 w-5 text-primary-foreground" />}<Text>{sharing ? "Opening…" : "Download PDF"}</Text></Button>
           <Text className="text-center text-caption text-muted-foreground">{Platform.OS === "ios" ? "Choose Save to Files in the share sheet, or share your CV directly." : "Downloads the same saved document shown in this preview."}</Text>

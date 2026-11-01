@@ -94,3 +94,18 @@ test('PDF validation rejects mismatched revision, auth failures and non-PDF bodi
   assert.throws(()=>pdf.validatePdfResponse(401,'application/pdf','1',1));
   assert.doesNotThrow(()=>pdf.validatePdfResponse(200,'application/pdf','1',1));
 });
+test('missing or unauthorized cached CVs preserve local edits without being treated as offline saves',async()=>{
+  for(const status of [401,403,404]) {
+    let blocked=false;
+    const h=harness({load:async()=>{if(blocked)throw Object.assign(Error('CV access unavailable'),{status});return doc();}});
+    await h.session.restore();h.session.update({summary:'Unsynced correction'});await pause();blocked=true;
+    await h.session.refresh();
+    assert.equal(h.session.snapshot.accessStatus,status);
+    assert.match(h.session.snapshot.error,/unsynced edits/);
+    assert.equal(h.session.snapshot.resume.summary,'Unsynced correction');
+    assert.equal(await h.session.flush(),null);assert.equal(h.mutations.length,0);
+    assert.equal(JSON.parse(h.stored).resume.summary,'Unsynced correction');
+    blocked=false;await h.session.refresh();assert.equal(h.session.snapshot.error,null);
+    const saved=await h.session.flush();assert.equal(saved.resume.summary,'Unsynced correction');h.session.dispose();
+  }
+});

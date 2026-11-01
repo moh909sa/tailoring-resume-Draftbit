@@ -77,7 +77,7 @@ Run the response, diff, and authenticated-request regression tests with `node --
 
 ## Saved CV editor and PDF export
 
-`app/cv-editor/` contains Edit CV / Job Match and a separate actual PDF preview. Native section forms preserve untouched schema fields, custom sections, metadata, inline formatting, and bullet styles. Personally confirmed skills can be added without regenerating the CV or modifying the original.
+`app/cv-editor/` contains Edit CV / Job Match and a separate actual PDF preview. The routes require a saved tailoring-record UUID, distinct from the uploaded or engine resume IDs. Open them through Tailored CVs; Draftbit direct screen previews need an `id` supplied through Routes. PDF links may include a positive saved `revision`, or load the current saved revision when omitted. Missing/invalid links show recovery actions, and the editor returns to Tailored CVs. Native section forms preserve untouched schema fields, custom sections, metadata, inline formatting, and bullet styles. Personally confirmed skills can be added without regenerating the CV or modifying the original.
 
 `GET/PATCH /api/v1/mobile/tailored-cvs/{id}/editor` reads and saves canonical content. PATCH includes `expected_revision`, a secure UUID `mutation_id`, structured `resume`, and `confirmed_skills`. Railway atomically saves immutable revisions and replay receipts in the existing private mobile document database on its persistent volume; no new Supabase schema is required.
 

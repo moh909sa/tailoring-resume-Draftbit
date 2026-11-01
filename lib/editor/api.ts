@@ -13,7 +13,14 @@ async function request<T>(ownerId: string, path: string, signal: AbortSignal, pa
       const response = await fetch(mobileEndpoint(path), {method, signal: controller.signal, headers: {Authorization: "Bearer " + token, Accept: "application/json", ...(body === undefined ? {} : {"Content-Type":"application/json"})}, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
       const payload: unknown = await response.json().catch(() => null);
       if (response.status === 401 && attempt === 0) continue;
-      if (!response.ok) throw new CvApiError(apiErrorMessage(response.status, payload, "Your CV could not be saved. Your edits are kept on this device."), response.status);
+      if (!response.ok) {
+        const message = response.status === 404
+          ? "This saved CV could not be found. It may have been removed. Return to Tailored CVs."
+          : apiErrorMessage(response.status, payload, method === "PATCH"
+            ? "Your CV could not be saved. Your edits are kept on this device."
+            : "This CV request could not be completed. Please try again.");
+        throw new CvApiError(message, response.status);
+      }
       return parse(payload);
     } finally {
       clearTimeout(timer);

@@ -7,12 +7,13 @@ export type EditorState = {
   confirmedSkills: string[];
   loading: boolean;
   error: string | null;
+  accessStatus: number | null;
   saveState: SaveState;
   problem: string | null;
   analysis: EditorAnalysis | null;
   analysisLoading: boolean;
 };
-export const emptyEditorState = (): EditorState => ({document: null, resume: null, confirmedSkills: [], loading: true, error: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false});
+export const emptyEditorState = (): EditorState => ({document: null, resume: null, confirmedSkills: [], loading: true, error: null, accessStatus: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false});
 type Backup = {version: 1; document: EditorDocument; resume: JsonObject; confirmedSkills: string[]; pending: EditorSave | null; dirty: boolean};
 type Dependencies = {
   read: () => Promise<string | null>;
@@ -63,13 +64,13 @@ export class CvEditorSession {
   private stopTimer() { if (this.timer) clearTimeout(this.timer); this.timer = null; }
   private schedule(delay?: number) {
     this.stopTimer();
-    if (!this.active || this.disposed || !this.dirty || this.state.saveState === "conflict") return;
+    if (!this.active || this.disposed || !this.dirty || this.state.error || this.state.saveState === "conflict") return;
     const wait = delay ?? Math.max(500, Math.min(1800, 10000 - (Date.now() - (this.firstEdit ?? Date.now()))));
     this.timer = setTimeout(() => { this.timer = null; void this.flush(); }, wait);
   }
   private accept(doc: EditorDocument, keepDraft: boolean) {
     const analysis = keepDraft && doc.analysis ? {...doc.analysis, status: doc.analysis.score ? "stale" as const : "unavailable" as const} : doc.analysis;
-    this.change({document: doc, ...(keepDraft ? {} : {resume: doc.resume, confirmedSkills: doc.confirmed_skills}), analysis, loading: false, error: null});
+    this.change({document: doc, ...(keepDraft ? {} : {resume: doc.resume, confirmedSkills: doc.confirmed_skills}), analysis, loading: false, error: null, accessStatus: null});
   }
   async restore() {
     try {
@@ -120,7 +121,11 @@ export class CvEditorSession {
       await this.persist();
     } catch (e) {
       if (this.disposed || controller.signal.aborted) return;
-      this.change({loading:false, error:this.state.document ? null : errorMessage(e), ...(this.state.document ? {problem:"You’re offline or the service is unavailable. Your saved device copy is open.", saveState:this.dirty ? "local" : this.state.saveState} : {})});
+      const status = statusOf(e);
+      if (status === 401 || status === 403 || status === 404) {
+        this.stopTimer();
+        this.change({loading:false, accessStatus:status, error:errorMessage(e) + (this.dirty ? " Your unsynced edits are still kept on this device." : ""), problem:null, saveState:this.dirty ? "local":"error"});
+      } else this.change({loading:false, error:this.state.document ? null : errorMessage(e), ...(this.state.document ? {problem:"You’re offline or the service is unavailable. Your saved device copy is open.", saveState:this.dirty ? "local" : this.state.saveState} : {})});
     } finally {
       this.refreshing = false;
       if (this.reading === controller) this.reading = null;
@@ -139,6 +144,7 @@ export class CvEditorSession {
   }
   async flush(): Promise<EditorDocument | null> {
     this.stopTimer();
+    if (this.state.error) return null;
     if (this.saving) { await this.saving; return this.dirty && this.state.saveState === "saving" ? this.flush() : this.state.saveState === "saved" ? this.state.document : null; }
     if (!this.dirty) return this.state.document;
     if (!this.state.document || !this.state.resume || this.disposed || this.refreshing || this.state.saveState === "conflict") return null;
@@ -174,7 +180,10 @@ export class CvEditorSession {
       await this.persist();
       return stillSame ? saved : null;
     } catch (e) {
-      if (statusOf(e) === 409) {
+      const status = statusOf(e);
+      if (status === 401 || status === 403 || status === 404) {
+        this.change({accessStatus:status, error:errorMessage(e) + " Your unsynced edits are still kept on this device.", saveState:"local",problem:null});
+      } else if (status === 409) {
         this.pending = null;
         this.change({saveState:"conflict",problem:"A newer version was saved elsewhere. Your edits are safe here. Choose which version to keep."});
       } else if (statusOf(e) === 422 || statusOf(e) === 413) {
