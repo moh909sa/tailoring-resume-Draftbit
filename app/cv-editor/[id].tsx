@@ -80,8 +80,9 @@ export default function CvEditorScreen() {
           <LucideIcon name={editor.saveState === "saved" ? "CloudCheck" : editor.saveState === "conflict" || editor.saveState === "error" ? "CircleAlert" : "CloudUpload"} size={15} className={editor.saveState === "saved" ? "text-success" : "text-muted-foreground"}/>
           <Text className="text-caption text-muted-foreground">{statusLabels[editor.saveState]}</Text>
         </View>
+        {/* Both tab states initialize NativeWind’s variable provider on mount. */}
         <View className="flex-row rounded-2xl bg-muted p-1">
-          {(["edit","match"] as const).map(tab=><Pressable key={tab} accessibilityRole="tab" accessibilityState={{selected:view === tab}} onPress={()=>setView(tab)} className={cn("min-h-11 flex-1 items-center justify-center rounded-xl",view === tab && "bg-card")}><Text className={cn("text-body font-medium",view === tab ? "text-foreground" : "text-muted-foreground")}>{tab === "edit" ? "Edit CV" : "Job Match"}</Text></Pressable>)}
+          {(["edit","match"] as const).map(tab=><Pressable key={tab} accessibilityRole="tab" accessibilityState={{selected:view === tab}} onPress={()=>setView(tab)} className={cn("min-h-11 flex-1 items-center justify-center rounded-xl",view === tab ? "bg-card" : "bg-muted")}><Text className={cn("text-body font-medium",view === tab ? "text-foreground" : "text-muted-foreground")}>{tab === "edit" ? "Edit CV" : "Job Match"}</Text></Pressable>)}
         </View>
       </View>
       <ScrollView className="flex-1" contentContainerClassName="gap-5 px-6 pb-8" keyboardShouldPersistTaps="handled">

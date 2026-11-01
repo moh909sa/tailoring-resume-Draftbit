@@ -234,3 +234,79 @@ test("leaving while a save is in flight cannot reopen a late PDF preview", async
   assert.ok(!h.calls.some(([method])=>method==='push'));
   assert.equal(h.calls.at(-1)[1],'/(tabs)/library/tailored-cvs');h.dispose();
 });
+
+// Exercise the installed native renderer, rather than mocking NativeWind as the
+// earlier navigation tests do. Its diagnostic serializer reaches real React
+// Navigation default-context getters through React element metadata.
+function installedSource(relative, mocks) {
+  const filename=path.join(root,"node_modules",relative);
+  const compiled=ts.transpileModule(fs.readFileSync(filename,'utf8'),{fileName:filename,reportDiagnostics:true,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}});
+  assert.equal(compiled.diagnostics.length,0);
+  const mod={exports:{}};
+  new Function('require','module','exports',compiled.outputText)(name=>Object.hasOwn(mocks,name)?mocks[name]:require(name),mod,mod.exports);
+  return mod.exports;
+}
+let nativeStyles;
+async function nativeTransition() {
+  if(!nativeStyles) nativeStyles=(async()=>{
+    const postcss=require('postcss'),tailwind=require('tailwindcss');
+    const config=require('../tailwind.config.js');
+    const css=await postcss([tailwind({...config,safelist:[],content:[{raw:'bg-card bg-muted bg-background bg-primary min-h-11 flex-1 items-center justify-center rounded-xl overflow-hidden gap-4 px-8',extension:'html'}]})]).process('@tailwind utilities;',{from:undefined});
+    return require('react-native-css-interop/css-to-rn').cssToReactNativeRuntime(Buffer.from(css.css),{inlineRem:14}).rules;
+  })();
+  const rules=await nativeStyles;
+  const {NavigationStateContext}=installedSource('@react-navigation/core/src/NavigationStateContext.tsx',{react:React});
+  const {renderComponent,UpgradeState}=installedSource('react-native-css-interop/src/runtime/native/render-component.tsx',{
+    react:React,'react-native':{Pressable:'Pressable'},'./globals':{containerContext:React.createContext({})},'./styles':{VariableContext:React.createContext({})}
+  });
+  const state={canUpgradeWarn:false,variables:UpgradeState.NONE,containers:UpgradeState.NONE,animated:UpgradeState.NONE,pressable:UpgradeState.NONE,originalProps:null};
+  const child=React.createElement(NavigationStateContext.Provider,{value:{getKey:()=>TAILORED,getState:()=>({routes:[]})}},'Screen content');
+  return className=>{
+    // Matches native-interop's rule-set upgrade, using actual compiled app colors.
+    if(className.split(/\s+/).some(name=>rules[name]?.variables)) state.variables ||= UpgradeState.SHOULD_UPGRADE;
+    state.originalProps={className,children:child};
+    return renderComponent('View',state,{children:child},{style:{flex:1}},state.variables?{'--tw-bg-opacity':1}:undefined);
+  };
+}
+
+test('native styling reproducer identifies the exact misleading navigation exception',async()=>{
+  const render=await nativeTransition();
+  render('flex-1');
+  assert.throws(()=>render('flex-1 bg-card'),error=>/Couldn.t find a navigation context/.test(error.message)&&/printUpgradeWarning/.test(error.stack));
+});
+
+test('saved editor can switch repeatedly between Edit CV and Job Match through native style resolution',async()=>{
+  const h=harness(),document=makeDocument();let updates=0;
+  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,refreshAnalysis:()=>{updates++;},flush:async()=>document};
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+  const tabs=()=>['Edit CV','Job Match'].map(label=>h.find(n=>n.props.accessibilityRole==='tab'&&text(n)===label));
+  const renderers=[await nativeTransition(),await nativeTransition()];
+  const paint=()=>tabs().forEach((node,i)=>assert.doesNotThrow(()=>renderers[i](node.props.className),text(node)));
+  paint();
+  for(const label of ['Job Match','Edit CV','Job Match','Edit CV']){
+    tabs().find(n=>text(n)===label).props.onPress();h.render();paint();
+    if(label==='Job Match')assert.ok(h.find(n=>n.type==='JobMatch'));
+  }
+  assert.equal(updates,1);assert.deepEqual(editor.resume,document.resume);h.dispose();
+});
+
+test('native PDF loading-to-document and paper-size transitions preserve context and Back returns to the editor',async(t)=>{
+  const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,revision:'6'};
+  let release,reads=0;const pending=new Promise(resolve=>release=resolve);
+  const sizes=[];
+  h.open('app/cv-editor/[id]/preview.tsx',{
+    '@/lib/editor/api':{getEditorDocument:async()=>++reads===1?pending:makeDocument()},
+    '@/lib/editor/pdf':{loadEditorPdf:async(owner,id,revision,size)=>{sizes.push(size);return{uri:'file:///isolated/'+size+'.pdf',revision,dispose:async()=>{}};},shareEditorPdf:async()=>{}}
+  });
+  h.render();
+  const children=node=>Array.isArray(node.props.children)?node.props.children:[node.props.children];
+  const loading=()=>h.find(n=>n.type==='View'&&children(n).some(c=>c?.type==='Spinner'));
+  const document=()=>h.find(n=>n.type==='View'&&children(n).some(c=>c?.type==='PdfViewer'));
+  const paint=await nativeTransition();paint(loading().props.className);
+  release(makeDocument());await h.pump();
+  assert.doesNotThrow(()=>paint(document().props.className));
+  h.find(n=>n.props.accessibilityLabel==='Letter paper size').props.onPress();h.render();
+  assert.doesNotThrow(()=>paint(loading().props.className));await h.pump();
+  assert.doesNotThrow(()=>paint(document().props.className));assert.deepEqual(sizes,['A4','LETTER']);
+  h.find(n=>n.props.accessibilityLabel==='Back to CV editor').props.onPress();assert.deepEqual(h.calls.at(-1),['back']);h.dispose();
+});

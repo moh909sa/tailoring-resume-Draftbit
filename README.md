@@ -77,6 +77,8 @@ Run the response, diff, and authenticated-request regression tests with `node --
 
 ## Saved CV editor and PDF export
 
+Editor tabs and PDF loading/error/document views initialize themed backgrounds from their first render. This keeps NativeWind v4’s variable-provider structure stable during state changes; its upgrade-warning serializer can otherwise throw a misleading navigation-context error (see [NativeWind #1812](https://github.com/nativewind/nativewind/issues/1812)). Expo Router continues to own the navigation container.
+
 `app/cv-editor/` contains Edit CV / Job Match and a separate actual PDF preview. The routes require a saved tailoring-record UUID, distinct from the uploaded or engine resume IDs. Open them through Tailored CVs; Draftbit direct screen previews need an `id` supplied through Routes. PDF links may include a positive saved `revision`, or load the current saved revision when omitted. Missing/invalid links show recovery actions, and the editor returns to Tailored CVs. Navigation ignores late preview actions after leaving the editor. Native section forms preserve untouched schema fields, custom sections, metadata, inline formatting, and bullet styles. Engine-identified skills can be personally confirmed and added without regenerating the CV or modifying the original.
 
 `GET/PATCH /api/v1/mobile/tailored-cvs/{id}/editor` reads and saves canonical content. PATCH includes `expected_revision`, a secure UUID `mutation_id`, structured `resume`, and `confirmed_skills`. Railway atomically saves immutable revisions and replay receipts in the existing private mobile document database on its persistent volume; no new Supabase schema is required.

@@ -29,3 +29,5 @@
 - Confirm & Save hands off to a durable saved-CV editor with account-scoped recovery, revision-safe autosaves, explicit skill confirmation, current job-match analysis, and actual revision-bound PDF preview/export.
 
 Tailor preparation is saved per account; identical inputs reopen existing results, and engine feedback and verification warnings remain available through confirmation.
+
+Editor tab and PDF state transitions retain a stable NativeWind variable-provider structure under the existing Expo Router navigator.
