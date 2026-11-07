@@ -662,13 +662,6 @@ export default function TailoringReviewScreen() {
               <>
                 <KeywordDestinations review={review} resume={run.preview.preview.resume_preview} />
                 <ChangeSummaryCards summary={review.change_summary} />
-                <View className="flex-row flex-wrap gap-4">
-                  <Text className="text-caption text-success">+ Added</Text>
-                  <Text className="text-caption text-destructive">− Removed</Text>
-                  <Text className="text-caption text-muted-foreground">
-                    Underline · wording edit
-                  </Text>
-                </View>
               </>
             ) : null}
             {run.step === 2 ? (
