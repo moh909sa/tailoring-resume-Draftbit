@@ -67,7 +67,6 @@ type WizardItem = { connected?: string } & (
       verification?: boolean;
     }
   | { id: string; kind: "resume"; item: ReviewItem }
-  | { id: string; kind: "feedback"; item: ReviewItem }
   | { id: string; kind: "placement"; placement: KeywordPlacement }
   | { id: string; kind: "warning"; message: string }
   | { id: string; kind: "review-note"; message: string }
@@ -400,13 +399,6 @@ export default function TailoringReviewScreen() {
             : "Detailed comparisons are unavailable. Reload the review, then check the full resume before saving.",
       });
   }
-  if (run.step === 1) {
-    const feedback = reviewItems(run.preview.preview, "feedback");
-    if (feedback.length) {
-      items.push({ id: "engine-feedback", kind: "section", title: "Engine feedback", subtitle: "Writing, suggestions and content checks", section: "engine-feedback" });
-      if (expanded.has("engine-feedback")) feedback.forEach((item) => items.push({ id: "feedback-" + item.id, kind: "feedback", item }));
-    }
-  }
   if (run.step === 2) {
     items.push({
       id: "resume-heading",
@@ -491,8 +483,6 @@ export default function TailoringReviewScreen() {
             )}
           </View>
         );
-      case "feedback":
-        return <ReviewContent item={item.item} />;
       case "resume":
         return <ReviewContent item={item.item} document />;
       case "placement":
