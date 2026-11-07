@@ -11,7 +11,11 @@ function loadSource(relative, mocks = {}) {
   const result = ts.transpileModule(source, {
     fileName: relative,
     reportDiagnostics: true,
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
   });
   assert.equal(result.diagnostics.length, 0);
   const loaded = { exports: {} };
@@ -77,6 +81,7 @@ const primitivesMocks = {
 };
 const primitives = loadSource("components/tailoring/ReviewPrimitives.tsx", primitivesMocks);
 const previewContent = loadSource("components/tailoring/ReviewContent.tsx", primitivesMocks);
+const changesUi = loadSource("lib/tailoring/changes.ts", primitivesMocks);
 
 test("keyword toggles retain stable classes, checked state and visible selection on repeated presses", () => {
   const selected = new Set();
@@ -368,7 +373,7 @@ test("simplified Changes preserves individual risks, dynamic counts and unmatche
   assert.ok(!list.props.data.some((item) => item.id === "verification-unavailable"));
 });
 
-test("Summary comparisons preserve complete paragraphs with full Before strikethrough and word highlights", () => {
+test("Summary comparisons strike the complete original and highlight only additions assigned to Summary", () => {
   const original =
     "Built devices and systems.\n\n" +
     "Maintained reliable equipment across multiple sites. ".repeat(25);
@@ -383,7 +388,11 @@ test("Summary comparisons preserve complete paragraphs with full Before striketh
     original_value: original,
     new_value: updated,
   };
-  const comparison = primitives.ChangeComparison({ change, summaryComparison: true });
+  const comparison = primitives.ChangeComparison({
+    change,
+    summaryComparison: true,
+    appliedKeywords: ["automation"],
+  });
   const sections = nodes(comparison).filter(
     (node) => node.type === "View" && node.props.className?.includes("border-l-2"),
   );
@@ -391,21 +400,21 @@ test("Summary comparisons preserve complete paragraphs with full Before striketh
   const after = nodes(sections[1]).find((node) => node.type === "Text" && node.props.selectable);
   assert.equal(text(before), original);
   assert.equal(text(after), updated);
-  const beforeParts = nodes(before).filter((node) => node !== before && node.type === "Text");
-  assert.ok(beforeParts.every((node) => node.props.className.includes("line-through")));
+  assert.ok(before.props.className.includes("line-through"));
+  assert.ok(before.props.className.includes("text-destructive"));
+  assert.doesNotMatch(text(comparison), /Modified wording/);
   assert.ok(
-    beforeParts.some(
-      (node) => text(node).includes("devices") && node.props.className.includes("text-destructive"),
+    nodes(after).some(
+      (node) =>
+        text(node).includes("automation") && node.props.className?.includes("text-tertiary"),
     ),
   );
   assert.ok(
     nodes(after).some(
-      (node) => text(node).includes("automation") && node.props.className?.includes("text-primary"),
+      (node) => node.props.className === "text-foreground" && text(node).includes("Maintained"),
     ),
   );
-  assert.ok(
-    nodes(after).some((node) => node.props.className === "" && text(node).includes("Maintained")),
-  );
+  assert.ok(!nodes(after).some((node) => /underline|bg-/.test(node.props.className ?? "")));
   // Existing Skills/Descriptions styling does not acquire whole-paragraph deletion.
   const other = primitives.ChangeComparison({ change: { ...change, field_type: "description" } });
   const otherBefore = nodes(other).find((node) => node.type === "Text" && node.props.selectable);
@@ -475,41 +484,403 @@ test("connected accordions keep compact skill additions without altering verific
   assert.equal(skill.change.confidence, "high");
 });
 
-test("descriptions share Summary replacement treatment without altering backend paragraphs", () => {
-  const original = "Built devices.\n\n" + "Kept production reliable. ".repeat(30);
-  const updated = "Built automation.\n\n" + "Kept production reliable. ".repeat(30);
+test("description cards strike the entire wrapped original and keep wording-only After plain", () => {
   const change = {
     field_type: "description",
     field_path: "workExperience[0].description[0]",
     change_type: "modified",
     confidence: "medium",
-    original_value: original,
-    new_value: updated,
+    original_value:
+      "Provided support using documented processes.\n" + "Kept production reliable. ".repeat(30),
+    new_value:
+      "Provided support with documented processes.\n" + "Kept production reliable. ".repeat(30),
   };
   const comparison = primitives.ChangeComparison({
     change,
     descriptionComparison: true,
     embedded: true,
+    appliedKeywords: [],
   });
-  assert.ok(!comparison.props.className.includes("rounded-2xl"));
-  const texts = nodes(comparison).filter((node) => node.type === "Text" && node.props.selectable);
-  assert.equal(text(texts[0]), original);
-  assert.equal(text(texts[1]), updated);
+  assert.ok(comparison.props.className.includes("rounded-xl"));
+  const values = nodes(comparison).filter((node) => node.type === "Text" && node.props.selectable);
+  assert.equal(text(values[0]), change.original_value);
+  assert.ok(values[0].props.className.includes("text-destructive"));
+  assert.ok(values[0].props.className.includes("line-through"));
+  assert.equal(text(values[1]), change.new_value);
+  for (const node of nodes(values[1]))
+    assert.doesNotMatch(node.props.className ?? "", /underline|line-through|text-tertiary|bg-/);
+});
+
+test("Changes combines both keyword rounds and all confirmed locations once without mutating the draft", () => {
+  const first = "System integration concepts";
+  const second = "Desktop and laptop support";
+  const { run, render } = screenHarness();
+  run.step = 1;
+  run.preview = makeReview("round-1", 76, [first]);
+  run.preview.review.keyword_placements = [{ keyword: first, paths: ["summary"] }];
+  run.step = 0;
+  const originalDraft = JSON.stringify(run.preview);
+  const keywordScreen = render();
+  const keywordList = nodes(keywordScreen).find((node) => node.type === "FlatList");
   assert.ok(
-    nodes(texts[0])
-      .filter((node) => node !== texts[0])
-      .every((node) => node.props.className.includes("line-through")),
+    !keywordList.props.data.some((item) => item.id === "placements" || item.kind === "placement"),
   );
+  assert.ok(!keywordList.props.data.some((item) => item.title === "Keywords in this draft"));
   assert.ok(
-    nodes(texts[0]).some(
+    nodes(keywordScreen).some(
       (node) =>
-        text(node).includes("devices") && node.props.className?.includes("text-destructive"),
+        node.type === "Button" && /Apply Keywords/.test(node.props.accessibilityLabel ?? ""),
+    ),
+  );
+  nodes(keywordScreen)
+    .find((node) => node.type === "Button" && text(node) === "Continue to Changes")
+    .props.onPress();
+  assert.equal(run.step, 1);
+  assert.equal(JSON.stringify(run.preview), originalDraft);
+  const destinations = () => {
+    const list = nodes(render()).find((node) => node.type === "FlatList");
+    const component = nodes(list.props.ListHeaderComponent).find(
+      (node) => node.type === primitives.KeywordDestinations,
+    );
+    return primitives.KeywordDestinationsCard({
+      ...component.props,
+      expanded: true,
+      onToggle: () => {},
+    });
+  };
+  assert.match(text(destinations()), /System integration conceptsSummary/);
+  run.preview = makeReview("round-2", 79, [first, second]);
+  run.preview.review.keyword_placements = [
+    { keyword: first, paths: ["summary"] },
+    { keyword: second, paths: ["additional.technicalSkills[2]"] },
+    {
+      keyword: second.toUpperCase(),
+      paths: [
+        "workExperience[0].description[0]",
+        "additional.technicalSkills[2]",
+        "workExperience[1].description[0]",
+      ],
+    },
+  ];
+  const snapshot = JSON.stringify(run.preview);
+  const rows = changesUi.keywordDestinations(
+    run.preview.review.keyword_options.applied,
+    run.preview.review.keyword_placements,
+    run.preview.preview.resume_preview,
+  );
+  assert.deepEqual(rows, [
+    { keyword: first, locations: ["Summary"] },
+    { keyword: second, locations: ["Skills", "Work Experience"] },
+  ]);
+  assert.match(text(destinations()), /Desktop and laptop supportSkillsWork Experience/);
+  assert.equal(JSON.stringify(run.preview), snapshot);
+  run.preview.review.keyword_placements = [];
+  assert.match(text(destinations()), /No confirmed location returned/);
+  assert.doesNotMatch(text(destinations()), /Skills · Work Experience/);
+});
+
+test("description list removes company headings, retaining paired bullets and warnings through Back and Continue", () => {
+  const { run, render } = screenHarness();
+  run.step = 1;
+  const original = run.preview.review.change_sections.find(
+    (section) => section.type === "description",
+  ).items[0];
+  const otherRole = { ...original, field_path: "workExperience[1].description[0]" };
+  const anotherBullet = { ...original, field_path: "workExperience[0].description[1]" };
+  run.preview.preview.resume_preview.workExperience.push({
+    title: "Support Engineer",
+    company: "Another employer",
+  });
+  run.preview.review.change_sections.find((section) => section.type === "description").items = [
+    original,
+    otherRole,
+    anotherBullet,
+  ];
+  const listFor = () => nodes(render()).find((node) => node.type === "FlatList");
+  let list = listFor();
+  list.props
+    .renderItem({ item: list.props.data.find((item) => item.section === "description") })
+    .props.children.props.onPress();
+  list = listFor();
+  assert.deepEqual(
+    list.props.data.filter((item) => item.kind === "description-group").map((item) => item.title),
+    [],
+  );
+  assert.deepEqual(
+    list.props.data.filter((item) => item.descriptionComparison).map((item) => item.change),
+    [original, otherRole, anotherBullet],
+  );
+  assert.ok(
+    list.props.data.some((item) => item.kind === "warning" && /bullet 2/.test(item.message)),
+  );
+  let screen = render();
+  const button = (label) =>
+    nodes(screen).find((node) => node.type === "Button" && text(node) === label);
+  button("Back").props.onPress();
+  assert.equal(run.step, 0);
+  screen = render();
+  button("Continue to Changes").props.onPress();
+  assert.equal(run.step, 1);
+  screen = render();
+  button("Continue").props.onPress();
+  assert.equal(run.step, 2);
+});
+
+test("description After highlights added applied phrases only and has no generic diff styling", () => {
+  const change = {
+    field_type: "description",
+    field_path: "workExperience[0].description[0]",
+    change_type: "modified",
+    confidence: "high",
+    original_value: "Provided Desktop support using documented processes.",
+    new_value: "Provided Desktop and laptop support with documented processes.",
+  };
+  const comparison = primitives.ChangeComparison({
+    change,
+    descriptionComparison: true,
+    appliedKeywords: ["Desktop and laptop support"],
+  });
+  const values = nodes(comparison).filter((node) => node.type === "Text" && node.props.selectable);
+  assert.equal(text(values[0]), change.original_value);
+  assert.equal(text(values[1]), change.new_value);
+  assert.doesNotMatch(text(comparison), /Modified wording|Work Experience 1|Description 1/);
+  assert.match(text(comparison), /Before|After|Verify accuracy/);
+  const blue = nodes(values[1])
+    .filter((node) => node !== values[1] && node.props.className?.includes("text-tertiary"))
+    .map(text)
+    .join("");
+  assert.equal(blue, "Desktop and laptop support");
+  assert.ok(
+    nodes(values[1]).some(
+      (node) => text(node).includes("with") && node.props.className === "text-foreground",
     ),
   );
   assert.ok(
-    nodes(texts[1]).some(
-      (node) => text(node).includes("automation") && node.props.className?.includes("text-primary"),
+    nodes(values[0]).some(
+      (node) => text(node).includes("using") && node.props.className?.includes("line-through"),
     ),
+  );
+  assert.ok(
+    nodes(values[0]).some(
+      (node) =>
+        text(node).includes("documented processes") &&
+        node.props.className.includes("line-through"),
+    ),
+  );
+  const parts = [{ text: "Use C++ and PLCs; PLC and OPC-UA.", changed: false }];
+  const marked = changesUi.highlightAppliedKeywords(parts, ["C++", "PLC", "OPC-UA"]);
+  assert.equal(marked.map((part) => part.text).join(""), parts[0].text);
+  assert.equal(
+    marked
+      .filter((part) => part.keyword)
+      .map((part) => part.text)
+      .join("|"),
+    "C++|PLC|OPC-UA",
+  );
+});
+
+test("description keyword highlights require a matching current placement and an actual addition", () => {
+  const { run, render } = screenHarness();
+  run.step = 1;
+  const keyword = {
+    field_type: "description",
+    field_path: "workExperience[0].description[0]",
+    change_type: "modified",
+    confidence: "medium",
+    original_value: "Supported networks.",
+    new_value: "Supported LAN/WAN networks.",
+  };
+  const wording = {
+    ...keyword,
+    field_path: "workExperience[0].description[1]",
+    original_value: "Supported LAN/WAN using documented processes.",
+    new_value: "Supported LAN/WAN with documented processes.",
+  };
+  run.preview.review.change_sections.find((section) => section.type === "description").items = [
+    keyword,
+    wording,
+  ];
+  run.preview.review.keyword_placements = [
+    { keyword: "LAN/WAN", paths: ["resume_preview.workExperience.0.description.0"] },
+    { keyword: "documented processes", paths: ["workExperience[1].description[1]"] },
+  ];
+  assert.deepEqual(changesUi.keywordsForChange(keyword, run.preview.review.keyword_placements), [
+    "LAN/WAN",
+  ]);
+  assert.deepEqual(changesUi.keywordsForChange(wording, run.preview.review.keyword_placements), []);
+  assert.deepEqual(
+    changesUi.keywordsForChange(
+      { ...keyword, field_path: "workExperience[0].description[10]" },
+      run.preview.review.keyword_placements,
+    ),
+    [],
+  );
+  let list = nodes(render()).find((node) => node.type === "FlatList");
+  list.props
+    .renderItem({ item: list.props.data.find((item) => item.section === "description") })
+    .props.children.props.onPress();
+  list = nodes(render()).find((node) => node.type === "FlatList");
+  for (const item of list.props.data.filter((item) => item.descriptionComparison)) {
+    const component = list.props.renderItem({ item }).props.children;
+    const comparison = primitives.ChangeComparison(component.props);
+    const after = nodes(comparison).filter(
+      (node) => node.type === "Text" && node.props.selectable,
+    )[1];
+    const blue = nodes(after)
+      .filter((node) => node.props.className?.includes("text-tertiary"))
+      .map(text)
+      .join("");
+    assert.equal(blue, item.change === keyword ? "LAN/WAN" : "");
+    assert.ok(!nodes(after).some((node) => /underline|bg-/.test(node.props.className ?? "")));
+  }
+  // Even a placement on the same bullet does not highlight a keyword already present before.
+  const existing = primitives.ChangeComparison({
+    change: wording,
+    descriptionComparison: true,
+    appliedKeywords: ["LAN/WAN"],
+  });
+  const after = nodes(existing).filter((node) => node.props.selectable)[1];
+  assert.ok(!nodes(after).some((node) => node.props.className?.includes("text-tertiary")));
+});
+
+test("keyword card preserves latest scores and stacked placements with current-only fallback", () => {
+  const preview = makeReview(
+    "latest-round",
+    63.3,
+    ["System integration concepts", "Long keyword that wraps naturally"],
+    [30.7, 56, 63.3],
+  );
+  const snapshot = JSON.stringify(preview);
+  const render = (expanded = true) =>
+    primitives.KeywordDestinationsCard({
+      review: preview.review,
+      resume: preview.preview.resume_preview,
+      expanded,
+      onToggle: () => {},
+    });
+  let box = render();
+  assert.match(
+    text(box),
+    /ATS match score56 → 63.3\+7.3 ptsLatest keyword updateWhere your keywords went2 keywords/,
+  );
+  assert.ok(box.props.className.includes("bg-card"));
+  for (const keyword of preview.review.keyword_options.applied) {
+    const label = nodes(box).find((node) => node.type === "Text" && text(node) === keyword);
+    assert.ok(label.props.className.includes("text-foreground"));
+    assert.ok(label.props.className.includes("flex-1"));
+    assert.equal(label.props.numberOfLines, undefined);
+  }
+  const badges = nodes(box).filter(
+    (node) => node.props.className === "max-w-full rounded-md bg-secondary px-2 py-1",
+  );
+  assert.deepEqual(badges.map(text), ["Summary", "Skills", "Summary", "Skills"]);
+  const scoreBlock = nodes(box).find((node) => node.props.accessibilityLiveRegion === "polite");
+  assert.ok(
+    nodes(scoreBlock).some(
+      (node) => text(node) === "63.3" && node.props.className.includes("text-h1"),
+    ),
+  );
+  assert.ok(
+    nodes(scoreBlock).some(
+      (node) => text(node) === "56" && node.props.className.includes("text-muted-foreground"),
+    ),
+  );
+  assert.equal(JSON.stringify(preview), snapshot);
+  preview.review.score_history = [63.3];
+  const scoreText = () =>
+    text(nodes(render()).find((node) => node.props.accessibilityLiveRegion === "polite"));
+  assert.match(scoreText(), /ATS match score63.3/);
+  assert.doesNotMatch(scoreText(), /→|pts/);
+  preview.review.score_history = [30.7, 56];
+  assert.doesNotMatch(scoreText(), /→|pts/);
+  preview.review.ats_score.overall_score = 0;
+  preview.review.score_history = [1, 0];
+  assert.match(scoreText(), /ATS match score1 → 0/);
+  assert.doesNotMatch(scoreText(), /pts/);
+});
+
+test("keyword disclosure starts collapsed, toggles full row accessibly, and leaves score and draft intact", () => {
+  let state;
+  const stateful = loadSource("components/tailoring/ReviewPrimitives.tsx", {
+    ...primitivesMocks,
+    react: {
+      ...React,
+      useMemo: (fn) => fn(),
+      useState: (initial) => {
+        if (state === undefined) state = initial;
+        return [
+          state,
+          (next) => {
+            state = typeof next === "function" ? next(state) : next;
+          },
+        ];
+      },
+    },
+  });
+  const preview = makeReview(
+    "current",
+    63.3,
+    [
+      "Networking fundamentals (LAN/WAN, TCP/IP, DNS, DHCP, VLANs, Wi-Fi)",
+      "Desktop and laptop support",
+    ],
+    [56, 63.3],
+  );
+  const snapshot = JSON.stringify(preview);
+  const render = () => {
+    const element = stateful.KeywordDestinations({
+      review: preview.review,
+      resume: preview.preview.resume_preview,
+    });
+    return stateful.KeywordDestinationsCard(element.props);
+  };
+  for (const expanded of [false, true, false]) {
+    const card = render();
+    const disclosure = nodes(card).find((node) => node.type === "Pressable");
+    assert.equal(disclosure.props.accessibilityRole, "button");
+    assert.equal(disclosure.props.accessibilityState.expanded, expanded);
+    assert.match(disclosure.props.accessibilityLabel, /2 keywords/);
+    assert.ok(disclosure.props.className.includes("min-h-20"));
+    assert.equal(
+      nodes(card).some(
+        (node) => node.type === "Text" && text(node) === "Desktop and laptop support",
+      ),
+      expanded,
+    );
+    assert.match(text(card), /56 → 63.3\+7.3 pts/);
+    if (expanded)
+      assert.ok(
+        nodes(card).some((node) => node.props.className?.includes("w-28 shrink-0 items-end")),
+      );
+    disclosure.props.onPress();
+  }
+  assert.equal(JSON.stringify(preview), snapshot);
+  state = undefined; // A fresh mount when entering Changes resets disclosure state.
+  assert.equal(
+    nodes(render()).find((node) => node.type === "Pressable").props.accessibilityState.expanded,
+    false,
+  );
+});
+
+test("Summary ignores keywords placed elsewhere and leaves wording-only edits plain", () => {
+  const { run, render } = screenHarness();
+  run.step = 1;
+  const change = run.preview.review.change_sections.find((section) => section.type === "summary")
+    .items[0];
+  change.original_value = "Worked using reliable systems.";
+  change.new_value = "Worked with reliable automation systems.";
+  run.preview.review.keyword_placements = [
+    { keyword: "automation", paths: ["workExperience[0].description[0]"] },
+  ];
+  const list = nodes(render()).find((node) => node.type === "FlatList");
+  const item = list.props.data.find((item) => item.summaryComparison);
+  const comparisonComponent = list.props.renderItem({ item }).props.children;
+  assert.deepEqual(comparisonComponent.props.appliedKeywords, []);
+  const comparison = primitives.ChangeComparison(comparisonComponent.props);
+  const after = nodes(comparison).filter((node) => node.props.selectable)[1];
+  assert.equal(text(after), change.new_value);
+  assert.ok(
+    !nodes(after).some((node) => /underline|text-tertiary|bg-/.test(node.props.className ?? "")),
   );
 });
 
@@ -531,10 +902,10 @@ test("Save keeps live metrics and directly displays the complete read-only resum
   );
   assert.ok(metrics.every((node) => node.props.className.includes("flex-1")));
   assert.match(text(list.props.ListHeaderComponent), /Your original CV stays unchanged\./);
-  const heading = list.props.data.find(item => item.id === "resume-heading");
+  const heading = list.props.data.find((item) => item.id === "resume-heading");
   assert.equal(heading.title, "Your tailored CV");
   assert.match(heading.body, /Read-only/);
-  assert.ok(list.props.data.some(item => item.kind === "warning"));
+  assert.ok(list.props.data.some((item) => item.kind === "warning"));
   assert.ok(!list.props.data.some((item) => item.kind === "section"));
   const resume = list.props.data.filter((item) => item.kind === "resume");
   assert.deepEqual(
@@ -758,30 +1129,92 @@ test("Save renders one continuous document with one heading per multi-entry sect
   assert.equal(JSON.stringify(resume), before);
 });
 
-
 test("confirmation displays every verification warning, including warnings about added skills", () => {
   const { run, render } = screenHarness();
   run.step = 2;
-  run.preview.review.warnings = [grounding, "Check additional.technicalSkills against your original CV.", "2 change(s) rejected during verification"];
-  const list = nodes(render()).find(n => n.type === "FlatList");
-  assert.deepEqual(list.props.data.filter(i => i.kind === "warning").map(i => i.message), warnings.reviewWarningsForStep(run.preview.review.warnings, 2));
-  assert.ok(list.props.data.findIndex(i => i.kind === "warning") < list.props.data.findIndex(i => i.kind === "resume"));
+  run.preview.review.warnings = [
+    grounding,
+    "Check additional.technicalSkills against your original CV.",
+    "2 change(s) rejected during verification",
+  ];
+  const list = nodes(render()).find((n) => n.type === "FlatList");
+  assert.deepEqual(
+    list.props.data.filter((i) => i.kind === "warning").map((i) => i.message),
+    warnings.reviewWarningsForStep(run.preview.review.warnings, 2),
+  );
+  assert.ok(
+    list.props.data.findIndex((i) => i.kind === "warning") <
+      list.props.data.findIndex((i) => i.kind === "resume"),
+  );
 });
-test("engine feedback retains complete suggestions, writing findings and page-fit output", () => {
+test("Changes omits Engine feedback while retaining complete underlying reports and Continue to Save", () => {
   const preview = makeReview().preview;
-  preview.improvements = [{ suggestion: "A complete engine suggestion. ".repeat(120), lineNumber: 3 }];
-  preview.writing = { score: 66, findings: [{ path: "workExperience[0].description[0]", rule: "no_metric", excerpt: "Full exact finding" }], critic_notes: [{ path: "summary", note: "Full critic note" }] };
-  preview.bullet_selection = { bullets_before: 40, bullets_after: 40, page_fit: "skipped", max_pages: null };
+  preview.improvements = [
+    { suggestion: "A complete engine suggestion. ".repeat(120), lineNumber: 3 },
+  ];
+  preview.writing = {
+    score: 66,
+    findings: [
+      {
+        path: "workExperience[0].description[0]",
+        rule: "no_metric",
+        excerpt: "Full exact finding",
+      },
+    ],
+    critic_notes: [{ path: "summary", note: "Full critic note" }],
+  };
+  preview.bullet_selection = {
+    bullets_before: 40,
+    bullets_after: 40,
+    page_fit: "skipped",
+    max_pages: null,
+  };
   const before = JSON.stringify(preview);
   const feedback = previewContent.reviewItems(preview, "feedback");
-  assert.equal(feedback.find(i => i.id.startsWith("improvements")).value, preview.improvements[0]);
-  assert.equal(feedback.find(i => i.id === "writing").value, preview.writing);
-  assert.equal(feedback.find(i => i.id === "bullet_selection").value, preview.bullet_selection);
+  assert.equal(
+    feedback.find((i) => i.id.startsWith("improvements")).value,
+    preview.improvements[0],
+  );
+  assert.equal(feedback.find((i) => i.id === "writing").value, preview.writing);
+  assert.equal(feedback.find((i) => i.id === "bullet_selection").value, preview.bullet_selection);
+  const { run, render } = screenHarness();
+  run.step = 1;
+  run.preview.preview = preview;
+  const screen = render();
+  const list = nodes(screen).find((node) => node.type === "FlatList");
+  assert.ok(
+    !list.props.data.some((item) => item.id === "engine-feedback" || item.kind === "feedback"),
+  );
+  assert.deepEqual(
+    list.props.data.filter((item) => item.kind === "section").map((item) => item.title),
+    run.preview.review.change_sections.map(
+      (section) =>
+        ({
+          summary: "Summary Changes",
+          skill: "Skills Changes",
+          description: "Description Changes",
+        })[section.type] ?? primitives.sectionTitle(section.type),
+    ),
+  );
+  assert.ok(list.props.data.some((item) => item.kind === "warning"));
+  const continueButton = nodes(screen).find(
+    (node) => node.type === "Button" && text(node) === "Continue",
+  );
+  assert.equal(continueButton.props.disabled, false);
+  continueButton.props.onPress();
+  assert.equal(run.step, 2);
+  assert.match(text(render()), /Confirm & Save/);
   assert.equal(JSON.stringify(preview), before);
 });
 test("read-only resume marks hidden sections without dropping their contents", () => {
-  const items = previewContent.orderedResumeItems({ summary: "Keep this whole text", sectionMeta: [{ key: "summary", isVisible: false }] });
+  const items = previewContent.orderedResumeItems({
+    summary: "Keep this whole text",
+    sectionMeta: [{ key: "summary", isVisible: false }],
+  });
   assert.equal(items[0].hidden, true);
   assert.equal(items[0].value, "Keep this whole text");
-  assert.match(text(previewContent.ReviewContent({ item: items[0], document: true })), /Hidden in PDF/);
+  assert.match(
+    text(previewContent.ReviewContent({ item: items[0], document: true })),
+    /Hidden in PDF/,
+  );
 });

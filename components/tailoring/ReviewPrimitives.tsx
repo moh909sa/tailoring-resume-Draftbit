@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import LucideIcon, { type IconName } from "@/lib/icons/LucideIcon";
@@ -7,11 +7,13 @@ import { useTheme } from "@/theming/ThemeProvider";
 import {
   atsScore,
   type ChangeSummary,
+  type JsonObject,
   type ResumeChange,
   type ReviewStep,
   type TailoringReview,
 } from "@/lib/tailoring/types";
 import { compareWords } from "@/lib/tailoring/diff";
+import { highlightAppliedKeywords, keywordDestinations } from "@/lib/tailoring/changes";
 import { readableLabel } from "@/components/tailoring/ReviewContent";
 
 const steps = ["Keywords", "Changes", "Save"];
@@ -355,12 +357,14 @@ export function ChangeComparison({
   descriptionComparison = false,
   embedded = false,
   verification = false,
+  appliedKeywords,
 }: {
   change: ResumeChange;
   summaryComparison?: boolean;
   descriptionComparison?: boolean;
   embedded?: boolean;
   verification?: boolean;
+  appliedKeywords?: string[];
 }) {
   const diff = useMemo(
     () => compareWords(change.original_value ?? "", change.new_value ?? ""),
@@ -369,64 +373,79 @@ export function ChangeComparison({
   const highRisk = change.confidence === "high";
   const fullComparison = summaryComparison || descriptionComparison;
   const calmVerification = verification || fullComparison;
-  const summaryReplaced =
-    fullComparison &&
-    change.change_type === "modified" &&
-    !!change.original_value &&
-    !!change.new_value &&
-    change.original_value !== change.new_value;
+  const after = useMemo(
+    () => highlightAppliedKeywords(diff.after, appliedKeywords ?? [], fullComparison),
+    [diff.after, appliedKeywords, fullComparison],
+  );
   return (
     <View
       className={cn(
         "gap-4 bg-card p-4",
+        descriptionComparison && "gap-3 rounded-xl border border-border",
         !embedded && "rounded-2xl border border-border",
         highRisk && !embedded && (calmVerification ? "border-primary/25" : "border-destructive/30"),
       )}
     >
-      <View className="flex-row flex-wrap items-center justify-between gap-2">
-        <Text className="text-h6 text-foreground">
-          {change.change_type === "added"
-            ? "Added"
-            : change.change_type === "removed"
-              ? "Removed"
-              : "Modified wording"}
-        </Text>
-        {highRisk ? (
-          <View
-            className={cn(
-              "flex-row items-center gap-1 rounded-full px-2.5 py-1",
-              calmVerification ? "bg-primary/10" : "bg-destructive/10",
-            )}
-          >
-            <LucideIcon
-              name="ShieldAlert"
-              size={12}
-              className={calmVerification ? "text-primary" : "text-destructive"}
-            />
-            <Text
-              className={cn("text-caption", calmVerification ? "text-primary" : "text-destructive")}
-            >
-              {calmVerification ? "Verify accuracy" : "High risk"}
+      {!fullComparison || highRisk ? (
+        <View className="flex-row flex-wrap items-center justify-between gap-2">
+          {!fullComparison ? (
+            <Text className="text-h6 text-foreground">
+              {change.change_type === "added"
+                ? "Added"
+                : change.change_type === "removed"
+                  ? "Removed"
+                  : "Modified wording"}
             </Text>
-          </View>
-        ) : null}
-      </View>
-      {change.field_path ? (
+          ) : null}
+          {highRisk ? (
+            <View
+              className={cn(
+                "flex-row items-center gap-1 rounded-full px-2.5 py-1",
+                calmVerification ? "bg-primary/10" : "bg-destructive/10",
+              )}
+            >
+              <LucideIcon
+                name="ShieldAlert"
+                size={12}
+                className={calmVerification ? "text-primary" : "text-destructive"}
+              />
+              <Text
+                className={cn(
+                  "text-caption",
+                  calmVerification ? "text-primary" : "text-destructive",
+                )}
+              >
+                {calmVerification ? "Verify accuracy" : "High risk"}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      {change.field_path && !fullComparison ? (
         <Text className="text-caption leading-5 text-muted-foreground">
           {fieldLocation(change.field_path)}
         </Text>
       ) : null}
-      <View className="gap-2 border-l-2 border-destructive/40 pl-3">
+      <View
+        className={
+          descriptionComparison ? "gap-1.5" : "gap-2 border-l-2 border-destructive/40 pl-3"
+        }
+      >
         <Text className="text-caption text-muted-foreground">Before</Text>
-        <Text selectable className="text-body leading-6 text-foreground">
-          {diff.before.length ? (
+        <Text
+          selectable
+          className={cn(
+            "text-body leading-6",
+            fullComparison ? "text-destructive line-through" : "text-foreground",
+          )}
+        >
+          {fullComparison ? (
+            change.original_value || "Not included"
+          ) : diff.before.length ? (
             diff.before.map((part, i) => (
               <Text
                 key={i}
-                className={cn(
-                  summaryReplaced && "line-through",
-                  part.changed && "bg-destructive/10 text-destructive line-through",
-                )}
+                className={cn(part.changed && "bg-destructive/10 text-destructive line-through")}
               >
                 {part.text}
               </Text>
@@ -436,19 +455,33 @@ export function ChangeComparison({
           )}
         </Text>
       </View>
-      <View className="gap-2 border-l-2 border-primary pl-3">
-        <Text className="text-caption text-primary">After</Text>
+      <View className={descriptionComparison ? "gap-1.5" : "gap-2 border-l-2 border-primary pl-3"}>
+        <Text
+          className={cn("text-caption", fullComparison ? "text-muted-foreground" : "text-primary")}
+        >
+          After
+        </Text>
         <Text selectable className="text-body leading-6 text-foreground">
-          {diff.after.length ? (
-            diff.after.map((part, i) => (
+          {after.length ? (
+            after.map((part, i) => (
               <Text
                 key={i}
                 className={
-                  part.changed
-                    ? change.change_type === "added" && !fullComparison
-                      ? "bg-success/10 text-success"
-                      : "bg-primary/10 text-primary"
-                    : ""
+                  fullComparison
+                    ? part.keyword
+                      ? "text-tertiary"
+                      : "text-foreground"
+                    : appliedKeywords !== undefined
+                      ? part.keyword
+                        ? "bg-tertiary/10 font-semibold text-tertiary"
+                        : part.changed
+                          ? "underline"
+                          : ""
+                      : part.changed
+                        ? change.change_type === "added" && !fullComparison
+                          ? "bg-success/10 text-success"
+                          : "bg-primary/10 text-primary"
+                        : ""
                 }
               >
                 {part.text}
@@ -468,6 +501,134 @@ export function ChangeComparison({
         >
           Verify this claim is accurate and supported by your experience before saving.
         </Text>
+      ) : null}
+    </View>
+  );
+}
+
+type KeywordDestinationsProps = { review: TailoringReview; resume: JsonObject };
+
+export function KeywordDestinations(props: KeywordDestinationsProps) {
+  // This component mounts only on Changes, so each entry starts collapsed.
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <KeywordDestinationsCard
+      {...props}
+      expanded={expanded}
+      onToggle={() => setExpanded((value) => !value)}
+    />
+  );
+}
+
+export function KeywordDestinationsCard({
+  review,
+  resume,
+  expanded,
+  onToggle,
+}: KeywordDestinationsProps & { expanded: boolean; onToggle: () => void }) {
+  const rows = keywordDestinations(
+    review.keyword_options.applied,
+    review.keyword_placements,
+    resume,
+  );
+  const score = atsScore(review);
+  const history = review.score_history;
+  const previous =
+    score !== null && history.length > 1 && history[history.length - 1] === score
+      ? history[history.length - 2]
+      : null;
+  const delta = score !== null && previous !== null ? score - previous : null;
+  const countLabel = `${rows.length} keyword${rows.length === 1 ? "" : "s"}`;
+  return (
+    <View className="overflow-hidden rounded-2xl border border-border bg-card">
+      <View accessibilityLiveRegion="polite" className="gap-2 p-4">
+        <Text className="text-caption font-medium text-muted-foreground">ATS match score</Text>
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="flex-row items-baseline gap-2">
+            {score !== null && previous !== null ? (
+              <>
+                <Text className="text-h3 tabular-nums text-muted-foreground">
+                  {formatScore(previous)}
+                </Text>
+                <Text className="text-body text-muted-foreground">{" → "}</Text>
+              </>
+            ) : null}
+            <Text
+              className={
+                score === null
+                  ? "text-h3 text-muted-foreground"
+                  : "text-h1 tabular-nums text-foreground"
+              }
+            >
+              {score === null ? "Unavailable" : formatScore(score)}
+            </Text>
+          </View>
+          {delta !== null && delta > 0 ? (
+            <View className="rounded-full bg-success/10 px-2.5 py-1">
+              <Text className="text-caption font-medium tabular-nums text-success">
+                +{formatScore(delta)} pts
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <Text className="text-caption text-muted-foreground">Latest keyword update</Text>
+      </View>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityLabel={`Where your keywords went, ${countLabel}`}
+        accessibilityState={{ expanded }}
+        accessibilityHint={expanded ? "Hide keyword locations" : "Show keyword locations"}
+        className="min-h-20 flex-row items-center gap-3 border-t border-border bg-card px-4 py-4 active:bg-secondary"
+      >
+        <LucideIcon name="MapPin" size={18} className="text-muted-foreground" />
+        <View className="flex-1 gap-1">
+          <Text className="text-h5 text-foreground">Where your keywords went</Text>
+          <Text className="text-caption text-muted-foreground">{countLabel}</Text>
+        </View>
+        <LucideIcon
+          name={expanded ? "ChevronUp" : "ChevronDown"}
+          size={18}
+          className="text-muted-foreground"
+        />
+      </Pressable>
+      {expanded ? (
+        <View className="border-t border-border bg-card px-4">
+          {rows.length ? (
+            rows.map((row, index) => (
+              <View
+                key={row.keyword.toLocaleLowerCase()}
+                className={cn(
+                  "flex-row items-start gap-3 py-3",
+                  index > 0 && "border-t border-border",
+                )}
+              >
+                <Text className="min-w-0 flex-1 text-body font-medium leading-6 text-foreground">
+                  {row.keyword}
+                </Text>
+                <View className="w-28 shrink-0 items-end gap-1.5">
+                  {row.locations.length ? (
+                    row.locations.map((location) => (
+                      <View key={location} className="max-w-full rounded-md bg-secondary px-2 py-1">
+                        <Text className="text-caption leading-4 text-muted-foreground">
+                          {location}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text className="text-caption leading-5 text-muted-foreground">
+                      No confirmed location returned for this draft.
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))
+          ) : (
+            <Text className="py-4 text-caption leading-5 text-muted-foreground">
+              No applied keyword placements were returned for this draft.
+            </Text>
+          )}
+        </View>
       ) : null}
     </View>
   );

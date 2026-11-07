@@ -12,9 +12,9 @@ import {
   AtsScoreCard,
   ChangeComparison,
   ChangeSummaryCards,
-  fieldLocation,
   formatScore,
   KeywordOption,
+  KeywordDestinations,
   ReviewStepper,
   SafetyNote,
   SectionToggle,
@@ -26,11 +26,11 @@ import {
   atsScore,
   keywordKey,
   previewHasExpired,
-  type KeywordPlacement,
   type ResumeChange,
   type ReviewStep,
 } from "@/lib/tailoring/types";
 import { reviewWarningsForStep } from "@/lib/tailoring/warnings";
+import { keywordsForChange, keywordDestinations } from "@/lib/tailoring/changes";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useTheme } from "@/theming/ThemeProvider";
 import LucideIcon from "@/lib/icons/LucideIcon";
@@ -67,7 +67,6 @@ type WizardItem = { connected?: string } & (
       verification?: boolean;
     }
   | { id: string; kind: "resume"; item: ReviewItem }
-  | { id: string; kind: "placement"; placement: KeywordPlacement }
   | { id: string; kind: "warning"; message: string }
   | { id: string; kind: "review-note"; message: string }
   | { id: string; kind: "skill-added"; change: ResumeChange }
@@ -130,7 +129,8 @@ export default function TailoringReviewScreen() {
   }, [run.step, run.preview?.tailoring_id, run.tailoringId, routeMatches]);
   useEffect(() => {
     const savedId = run.confirmation?.tailoring_id ?? run.preview?.tailoring_id ?? run.tailoringId;
-    if (routeMatches && run.saved && savedId) router.replace({ pathname: "/cv-editor/[id]", params: { id: savedId } });
+    if (routeMatches && run.saved && savedId)
+      router.replace({ pathname: "/cv-editor/[id]", params: { id: savedId } });
   }, [run.saved, run.confirmation?.tailoring_id, run.preview?.tailoring_id]);
 
   function close() {
@@ -227,6 +227,12 @@ export default function TailoringReviewScreen() {
     );
 
   const items: WizardItem[] = [];
+  const resume = run.preview.preview.resume_preview;
+  const appliedKeywords = keywordDestinations(
+    review.keyword_options.applied,
+    review.keyword_placements,
+    resume,
+  ).map((row) => row.keyword);
   // Deduplicate display options only. Keep backend data and attestation rules intact.
   const seenKeywords = new Set<string>();
   function uniqueKeywords(keywords: string[]) {
@@ -284,19 +290,7 @@ export default function TailoringReviewScreen() {
         kind: "warning",
         message: "No more skills can be added to this draft. Continue to Changes.",
       });
-    if (review.keyword_placements.length) {
-      items.push({
-        id: "placements",
-        kind: "section",
-        title: "Keywords in this draft",
-        subtitle: `${review.keyword_placements.length} keyword placements`,
-        section: "placements",
-      });
-      if (expanded.has("placements"))
-        review.keyword_placements.forEach((placement, index) =>
-          items.push({ id: `placement-${index}`, kind: "placement", placement }),
-        );
-    }
+
   }
   const warningsByChange = new Map<ResumeChange, string[]>();
   reviewWarningsForStep(review.warnings, run.step).forEach((message, index) => {
@@ -359,7 +353,7 @@ export default function TailoringReviewScreen() {
         highRisk: section.type === "skill" ? false : highRisk,
         connected,
       });
-      if (expanded.has(section.type))
+      if (expanded.has(section.type)) {
         section.items.forEach((change, changeIndex) => {
           const addedSkill = section.type === "skill" && change.change_type === "added";
           if (addedSkill) {
@@ -380,14 +374,15 @@ export default function TailoringReviewScreen() {
             });
           }
           warningsByChange.get(change)?.forEach((message, warningIndex) =>
-              items.push({
-                id: `change-warning-${index}-${changeIndex}-${warningIndex}`,
-                kind: "warning",
-                message,
-                connected,
-              }),
-            );
+            items.push({
+              id: `change-warning-${index}-${changeIndex}-${warningIndex}`,
+              kind: "warning",
+              message,
+              connected,
+            }),
+          );
         });
+      }
     });
     if (!review.change_sections.length)
       items.push({
@@ -449,9 +444,7 @@ export default function TailoringReviewScreen() {
             count={item.count}
             embedded={!!item.connected}
             icon={
-              item.section === "placements"
-                ? "MapPin"
-                : item.section === "save-review"
+              item.section === "save-review"
                   ? "ShieldCheck"
                   : item.section === "resume"
                     ? "FileUser"
@@ -467,6 +460,11 @@ export default function TailoringReviewScreen() {
             descriptionComparison={item.descriptionComparison}
             verification={item.verification}
             embedded={!!item.connected}
+            appliedKeywords={
+              item.descriptionComparison || item.summaryComparison
+                ? keywordsForChange(item.change, review!.keyword_placements)
+                : appliedKeywords
+            }
           />
         );
       case "skill-added":
@@ -485,17 +483,6 @@ export default function TailoringReviewScreen() {
         );
       case "resume":
         return <ReviewContent item={item.item} document />;
-      case "placement":
-        return (
-          <View className="gap-1.5 rounded-xl bg-secondary/50 p-4">
-            <Text className="text-h6 text-foreground">{item.placement.keyword}</Text>
-            <Text className="text-caption leading-5 text-muted-foreground">
-              {item.placement.paths.length
-                ? item.placement.paths.map(fieldLocation).join("\n")
-                : "No placement details were returned."}
-            </Text>
-          </View>
-        );
       case "warning":
         return <SafetyNote message={item.message} />;
       case "review-note":
@@ -533,6 +520,7 @@ export default function TailoringReviewScreen() {
         className={cn(
           "overflow-hidden border-x border-border bg-card",
           header ? "rounded-t-2xl border-t" : "border-t",
+          item.kind === "change" && item.descriptionComparison && "px-3 py-2",
           last && "mb-3 rounded-b-2xl border-b",
         )}
       >
@@ -672,11 +660,14 @@ export default function TailoringReviewScreen() {
             ) : null}
             {run.step === 1 ? (
               <>
+                <KeywordDestinations review={review} resume={run.preview.preview.resume_preview} />
                 <ChangeSummaryCards summary={review.change_summary} />
                 <View className="flex-row flex-wrap gap-4">
                   <Text className="text-caption text-success">+ Added</Text>
                   <Text className="text-caption text-destructive">− Removed</Text>
-                  <Text className="text-caption text-primary">Modified wording</Text>
+                  <Text className="text-caption text-muted-foreground">
+                    Underline · wording edit
+                  </Text>
                 </View>
               </>
             ) : null}
