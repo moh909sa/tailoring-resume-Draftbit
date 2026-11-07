@@ -300,10 +300,12 @@ export default function TailoringReviewScreen() {
     }
   }
   const warningsByChange = new Map<ResumeChange, string[]>();
-  reviewWarningsForStep(review.warnings, run.step).forEach((message, index) => {
-    // Attach verification to its exact comparison; also show every warning
-    // beside the final read-only document before confirmation.
-    const rawWarning = review.warnings[index];
+  review.warnings.forEach((rawWarning, index) => {
+    // The engine can still produce a usable draft when optional skill planning fails.
+    if (/^\s*Skill target planning failed\.?\s*$/i.test(rawWarning)) return;
+    const [message] = reviewWarningsForStep([rawWarning], run.step);
+    if (message === undefined) return;
+    // Attach verification to its exact comparison and show it again on Save.
     const referencedPaths: string[] =
       rawWarning?.match(/[A-Za-z_]\w*(?:\[\d+\]|\.[A-Za-z_]\w*)+/g) ?? [];
     const relatedChange =
