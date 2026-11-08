@@ -323,6 +323,65 @@ test("pending Incident management and Technical documentation gate Continue unti
   );
 });
 
+test("only skill attestation uses a warning card; other review notes stay neutral with recovery actions", () => {
+  const { run, render } = screenHarness();
+  run.preview.review.warnings.push("Some details need checking against your original CV.");
+  const snapshot = JSON.stringify(run.preview);
+  for (const step of [0, 1, 2]) {
+    run.step = step;
+    const list = nodes(render()).find((node) => node.type === "FlatList");
+    for (const item of list.props.data.filter((item) => item.kind === "warning")) {
+      const note = list.props.renderItem({ item }).props.children;
+      assert.equal(
+        note.type,
+        item.id === "attestation-safety" ? primitives.SafetyNote : primitives.ReviewNote,
+      );
+      const rendered = note.type(note.props);
+      assert.equal(text(rendered), item.message);
+      if (item.id !== "attestation-safety") {
+        assert.ok(!nodes(rendered).some((node) => node.type === "Icon"));
+        assert.ok(
+          !nodes(rendered).some((node) =>
+            /bg-warning|border-warning/.test(node.props.className ?? ""),
+          ),
+        );
+      }
+    }
+  }
+  assert.equal(JSON.stringify(run.preview), snapshot);
+  run.step = 0;
+  run.reviewProblem = { kind: "retry", message: "Connection lost. Your draft is preserved." };
+  let screen = render();
+  let list = nodes(screen).find((node) => node.type === "FlatList");
+  assert.ok(
+    nodes(list.props.ListHeaderComponent).some(
+      (node) =>
+        node.type === primitives.ReviewNote && node.props.message === run.reviewProblem.message,
+    ),
+  );
+  assert.ok(
+    nodes(screen)
+      .concat(nodes(list.props.ListHeaderComponent))
+      .some(
+        (node) => node.type === "Button" && text(node) === "Reload review" && !node.props.disabled,
+      ),
+  );
+  run.reviewProblem = { kind: "expired", message: "Preview expired" };
+  run.input = { resumeId: "source", jobDescription: "Saved input" };
+  list = nodes(render()).find((node) => node.type === "FlatList");
+  assert.ok(
+    nodes(list.props.ListHeaderComponent).some(
+      (node) =>
+        node.type === primitives.ReviewNote && /preview has expired/.test(node.props.message),
+    ),
+  );
+  assert.ok(
+    nodes(list.props.ListHeaderComponent).some(
+      (node) => node.type === "Button" && text(node) === "Create new preview",
+    ),
+  );
+});
+
 test("verification rejection summaries use friendly copy outside Keywords without hiding other warnings", () => {
   for (const count of [1, 7]) {
     const summary = `${count} change(s) rejected during verification`;
@@ -1022,7 +1081,8 @@ test("Save preserves Back, explicit confirmation, loading, errors, expiration an
   const list = nodes(screen).find((node) => node.type === "FlatList");
   assert.ok(
     nodes(list.props.ListHeaderComponent).some(
-      (node) => node.type === "Notice" && node.props.message === run.reviewProblem.message,
+      (node) =>
+        node.type === primitives.ReviewNote && node.props.message === run.reviewProblem.message,
     ),
   );
   assert.equal(run.preview, draft);

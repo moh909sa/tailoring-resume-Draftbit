@@ -150,6 +150,13 @@ export function AtsScoreCard({ review }: { review: TailoringReview }) {
     </View>
   );
 }
+export function ReviewNote({ message }: { message: string }) {
+  return (
+    <Text accessibilityLiveRegion="polite" className="text-caption leading-5 text-muted-foreground">
+      {message}
+    </Text>
+  );
+}
 export function SafetyNote({ message, highRisk = false }: { message: string; highRisk?: boolean }) {
   return (
     <View
@@ -398,26 +405,9 @@ export function ChangeComparison({
             </Text>
           ) : null}
           {highRisk ? (
-            <View
-              className={cn(
-                "flex-row items-center gap-1 rounded-full px-2.5 py-1",
-                calmVerification ? "bg-primary/10" : "bg-destructive/10",
-              )}
-            >
-              <LucideIcon
-                name="ShieldAlert"
-                size={12}
-                className={calmVerification ? "text-primary" : "text-destructive"}
-              />
-              <Text
-                className={cn(
-                  "text-caption",
-                  calmVerification ? "text-primary" : "text-destructive",
-                )}
-              >
-                {calmVerification ? "Verify accuracy" : "High risk"}
-              </Text>
-            </View>
+            <Text className="text-caption text-muted-foreground">
+              {calmVerification ? "Verify accuracy" : "High risk"}
+            </Text>
           ) : null}
         </View>
       ) : null}
@@ -493,12 +483,7 @@ export function ChangeComparison({
         </Text>
       </View>
       {highRisk ? (
-        <Text
-          className={cn(
-            "text-caption leading-5",
-            calmVerification ? "text-muted-foreground" : "text-destructive",
-          )}
-        >
+        <Text className={cn("text-caption leading-5", "text-muted-foreground")}>
           Verify this claim is accurate and supported by your experience before saving.
         </Text>
       ) : null}

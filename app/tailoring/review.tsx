@@ -6,7 +6,6 @@ import { AppScreen } from "@/components/layout/AppScreen";
 import { ScreenHeader } from "@/components/layout/ScreenHeader";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Notice } from "@/components/cv/Notice";
 import { ReviewContent, reviewItems, type ReviewItem } from "@/components/tailoring/ReviewContent";
 import {
   AtsScoreCard,
@@ -17,6 +16,7 @@ import {
   KeywordDestinations,
   ReviewStepper,
   SafetyNote,
+  ReviewNote,
   SectionToggle,
   sectionTitle,
 } from "@/components/tailoring/ReviewPrimitives";
@@ -67,7 +67,8 @@ type WizardItem = { connected?: string } & (
       verification?: boolean;
     }
   | { id: string; kind: "resume"; item: ReviewItem }
-  | { id: string; kind: "warning"; message: string; highlightAttestation?: true }
+  | { id: string; kind: "warning"; message: string }
+  | { id: string; kind: "review-note"; message: string }
   | { id: string; kind: "skill-added"; change: ResumeChange }
 );
 
@@ -190,7 +191,7 @@ export default function TailoringReviewScreen() {
           ) : (
             <>
               {run.reviewProblem ? (
-                <Notice tone="error" message={run.reviewProblem.message} />
+                <ReviewNote message={run.reviewProblem.message} />
               ) : (
                 <Text className="text-body leading-6 text-muted-foreground">
                   {!ownerId
@@ -271,7 +272,6 @@ export default function TailoringReviewScreen() {
       items.push({
         id: "attestation-safety",
         kind: "warning",
-        highlightAttestation: true,
         message: "Only select skills you really have. You may be asked about them in interviews.",
       });
       options.needs_attestation.forEach((keyword, index) =>
@@ -484,13 +484,13 @@ export default function TailoringReviewScreen() {
       case "resume":
         return <ReviewContent item={item.item} document />;
       case "warning":
-        return item.highlightAttestation ? (
+        return item.id === "attestation-safety" ? (
           <SafetyNote message={item.message} />
         ) : (
-          <Text className="px-4 py-3 text-caption leading-5 text-muted-foreground">
-            {item.message}
-          </Text>
+          <ReviewNote message={item.message} />
         );
+      case "review-note":
+        return <ReviewNote message={item.message} />;
     }
   }
   function renderRow(item: WizardItem, index = items.indexOf(item)) {
@@ -612,10 +612,7 @@ export default function TailoringReviewScreen() {
             ) : null}
             {run.reviewProblem && !expired ? (
               <View className="gap-2">
-                <Notice
-                  tone={run.reviewProblem.kind === "conflict" ? "info" : "error"}
-                  message={run.reviewProblem.message}
-                />
+                <ReviewNote message={run.reviewProblem.message} />
                 <Button
                   variant="outline"
                   onPress={() => void reloadReview()}
@@ -628,10 +625,7 @@ export default function TailoringReviewScreen() {
             ) : null}
             {expired ? (
               <View className="gap-3">
-                <Text className="text-caption leading-5 text-muted-foreground">
-                  This preview has expired. Your current draft and selections are preserved.
-                  Create a new preview to continue.
-                </Text>
+                <ReviewNote message="This preview has expired. Your current draft and selections are preserved. Create a new preview to continue." />
                 {run.input ? (
                   <Button
                     variant="outline"
