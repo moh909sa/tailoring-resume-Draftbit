@@ -243,8 +243,15 @@ test("all 75 returned suggestions share one list; selections persist and Continu
   const continueButton = nodes(screen).find(
     (node) => node.type === "Button" && text(node) === "Continue to Changes",
   );
-  assert.equal(continueButton.props.disabled, false);
+  assert.equal(continueButton.props.disabled, true);
   continueButton.props.onPress();
+  assert.equal(run.step, 0);
+  for (const item of [...run.selectedKeywords]) run.toggleKeyword(item.keyword, item.attested);
+  const ready = nodes(render()).find(
+    (node) => node.type === "Button" && text(node) === "Continue to Changes",
+  );
+  assert.equal(ready.props.disabled, false);
+  ready.props.onPress();
   assert.equal(run.step, 1);
   list = nodes(render()).find((node) => node.type === "FlatList");
   assert.ok(
@@ -252,11 +259,67 @@ test("all 75 returned suggestions share one list; selections persist and Continu
       (item) => item.kind === "warning" && /bullet 2 in work experience 1/.test(item.message),
     ),
   );
-  assert.equal(run.selectedKeywords.length, 3);
+  assert.equal(run.selectedKeywords.length, 0);
   assert.ok(
     list.props.data.some(
       (item) => item.kind === "warning" && /2 suggested changes were excluded/.test(item.message),
     ),
+  );
+});
+
+test("pending Incident management and Technical documentation gate Continue until applied or deselected", () => {
+  const { run, render } = screenHarness();
+  run.preview.review.keyword_options.supported = [];
+  run.preview.review.keyword_options.needs_attestation = [
+    "Incident management",
+    "Technical documentation",
+  ];
+  const button = (screen, label) =>
+    nodes(screen).find(
+      (node) =>
+        node.type === "Button" && (node.props.accessibilityLabel === label || text(node) === label),
+    );
+  const toggle = (name) => {
+    const list = nodes(render()).find((node) => node.type === "FlatList");
+    list.props
+      .renderItem({
+        item: list.props.data.find((item) => item.kind === "keyword" && item.keyword === name),
+      })
+      .props.children.props.onPress();
+  };
+  assert.equal(button(render(), "Continue to Changes").props.disabled, false);
+  toggle("Incident management");
+  toggle("Technical documentation");
+  let screen = render();
+  assert.equal(button(screen, "Apply Keywords (2)").props.disabled, false);
+  assert.equal(button(screen, "Continue to Changes").props.disabled, true);
+  assert.match(text(screen), /Apply your selected keywords or deselect them to continue\./);
+  button(screen, "Continue to Changes").props.onPress();
+  assert.equal(run.step, 0);
+  run.reviewActivity = "keywords";
+  screen = render();
+  assert.equal(button(screen, "Apply Keywords (2)").props.disabled, true);
+  assert.equal(button(screen, "Continue to Changes").props.disabled, true);
+  // A successful response clears pending selections; request completion still gates navigation.
+  run.selectedKeywords = [];
+  assert.equal(button(render(), "Continue to Changes").props.disabled, true);
+  run.reviewActivity = null;
+  assert.equal(button(render(), "Continue to Changes").props.disabled, false);
+  assert.equal(run.step, 0);
+  // A failed apply leaves pending selections available for retry.
+  toggle("Incident management");
+  toggle("Technical documentation");
+  run.reviewProblem = { kind: "retry", message: "Apply failed. Your selections are preserved." };
+  screen = render();
+  assert.equal(button(screen, "Continue to Changes").props.disabled, true);
+  assert.equal(button(screen, "Apply Keywords (2)").props.disabled, false);
+  toggle("Incident management");
+  assert.equal(button(render(), "Continue to Changes").props.disabled, true);
+  toggle("Technical documentation");
+  assert.equal(button(render(), "Continue to Changes").props.disabled, false);
+  assert.doesNotMatch(
+    text(render()),
+    /Apply your selected keywords or deselect them to continue\./,
   );
 });
 

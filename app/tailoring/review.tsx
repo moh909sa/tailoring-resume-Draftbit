@@ -87,6 +87,7 @@ export default function TailoringReviewScreen() {
   const [now, setNow] = useState(Date.now());
   const routeMatches = !routeId || routeId === run.tailoringId;
   const review = routeMatches ? run.preview?.review : undefined;
+  const pendingKeywordCount = run.selectedKeywords.length;
   const busy = run.hydrating || run.reviewActivity !== null || run.status === "running";
   const expired = run.preview
     ? previewHasExpired(run.preview, now) || run.reviewProblem?.kind === "expired"
@@ -290,7 +291,6 @@ export default function TailoringReviewScreen() {
         kind: "warning",
         message: "No more skills can be added to this draft. Continue to Changes.",
       });
-
   }
   const warningsByChange = new Map<ResumeChange, string[]>();
   reviewWarningsForStep(review.warnings, run.step).forEach((message, index) => {
@@ -445,10 +445,10 @@ export default function TailoringReviewScreen() {
             embedded={!!item.connected}
             icon={
               item.section === "save-review"
-                  ? "ShieldCheck"
-                  : item.section === "resume"
-                    ? "FileUser"
-                    : "FileText"
+                ? "ShieldCheck"
+                : item.section === "resume"
+                  ? "FileUser"
+                  : "FileText"
             }
           />
         );
@@ -722,8 +722,8 @@ export default function TailoringReviewScreen() {
           <>
             <Button
               onPress={run.applyKeywords}
-              disabled={blocked || !run.selectedKeywords.length}
-              accessibilityLabel={`Apply Keywords (${run.selectedKeywords.length})`}
+              disabled={blocked || !pendingKeywordCount}
+              accessibilityLabel={`Apply Keywords (${pendingKeywordCount})`}
               className="h-12 gap-2 rounded-2xl"
             >
               {run.reviewActivity === "keywords" ? (
@@ -734,14 +734,24 @@ export default function TailoringReviewScreen() {
               <Text>
                 {run.reviewActivity === "keywords"
                   ? "Applying Keywords…"
-                  : `Apply Keywords (${run.selectedKeywords.length})`}
+                  : `Apply Keywords (${pendingKeywordCount})`}
               </Text>
             </Button>
+            {pendingKeywordCount > 0 ? (
+              <Text
+                accessibilityLiveRegion="polite"
+                className="text-caption text-center leading-5 text-muted-foreground"
+              >
+                Apply your selected keywords or deselect them to continue.
+              </Text>
+            ) : null}
             <View className="flex-row gap-3">
               <Button
                 variant="secondary"
-                onPress={() => setStep(1)}
-                disabled={busy}
+                onPress={() => {
+                  if (!busy && pendingKeywordCount === 0) setStep(1);
+                }}
+                disabled={busy || pendingKeywordCount > 0}
                 className="h-12 flex-1 rounded-xl"
               >
                 <Text>Continue to Changes</Text>

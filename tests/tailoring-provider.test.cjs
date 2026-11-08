@@ -9,7 +9,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(initial) {
   let cursor=0,dirty=false,value;
   const slots=[],effects=[],managers=[];
-  const h={owner:'owner-a',storage:new Map(initial),reads:[]};
+  const h={owner:'owner-a',storage:new Map(initial),reads:[],load:(owner,id)=>({...makeReview(),tailoring_id:id}),apply:async()=>{throw new Error('Unexpected apply request');}};
   const changed=(a,b)=>!a||b.some((v,i)=>!Object.is(a[i],v));
   const hooks={...React,
     createContext:()=>({Provider:'Provider'}),
@@ -36,7 +36,7 @@ function harness(initial) {
     '@/lib/auth/AuthProvider':{useAuth:()=>({session:h.owner?{user:{id:h.owner}}:null})},
     '@/lib/cv/types':{isRecord:v=>typeof v==='object'&&v!==null&&!Array.isArray(v)},
     '@/lib/tailoring/types':{keywordKey:s=>s.toLowerCase(),previewHasExpired:()=>false},
-    '@/lib/cv/api':{CvApiError:class extends Error{},loadTailoringReview:async(owner,id)=>{h.reads.push([owner,id]);return {...makeReview(),tailoring_id:id};}}
+    '@/lib/cv/api':{applyTailoringKeywords:(...args)=>h.apply(...args),CvApiError:class extends Error{},loadTailoringReview:async(owner,id)=>{h.reads.push([owner,id]);return h.load(owner,id);}}
   };
   new Function('require','module','exports',compiled.outputText)(name=>Object.hasOwn(mocks,name)?mocks[name]:require(name),mod,mod.exports);
   h.render=()=>{cursor=0;dirty=false;value=mod.exports.TailoringProvider({children:null}).props.value;for(const effect of effects.splice(0))effect();return value;};
@@ -61,4 +61,41 @@ test('a different review link can load after a previous confirmation without inh
   const h=harness([['tailoring-review-v1:owner-a',reference(true)]]);await h.pump();
   const next='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';await h.value().reloadReview(next);await h.pump();
   assert.equal(h.value().saved,false);assert.equal(h.value().tailoringId,next);assert.equal(h.value().preview.tailoring_id,next);assert.deepEqual(h.reads,[['owner-a',next]]);h.dispose();
+});
+
+const pendingNames=['Incident management','Technical documentation'];
+function pendingReview(applied=[]) {
+  const preview=makeReview(applied.length?'preview-applied':'preview-1',76,applied);
+  preview.review.keyword_options.supported=[];
+  preview.review.keyword_options.needs_attestation=pendingNames.filter(name=>!applied.includes(name));
+  return preview;
+}
+async function preparePendingReview() {
+  const h=harness([['tailoring-review-v1:owner-a',reference(false)]]);
+  await h.pump();h.load=()=>pendingReview();
+  await h.value().reloadReview();await h.pump();
+  h.value().setStep(0);h.render();
+  for(const name of pendingNames){h.value().toggleKeyword(name,true);h.render();}
+  assert.equal(h.value().selectedKeywords.length,2);
+  return h;
+}
+test('successful keyword apply clears both pending selections and stays on Keywords',async()=>{
+  const h=await preparePendingReview();let resolveApply;let calls=0;
+  h.apply=async(owner,id,previewId,keywords)=>{calls++;assert.deepEqual(keywords.map(item=>item.keyword),pendingNames);return new Promise(resolve=>{resolveApply=resolve;});};
+  h.value().applyKeywords();h.render();await h.pump();
+  assert.equal(h.value().reviewActivity,'keywords');
+  assert.equal(h.value().selectedKeywords.length,2);
+  resolveApply(pendingReview(pendingNames));await h.pump();
+  assert.equal(h.value().reviewActivity,null);assert.equal(h.value().selectedKeywords.length,0);
+  assert.equal(h.value().step,0);assert.equal(calls,1);h.dispose();
+});
+test('failed apply retains pending selections through reconciliation for retry or deselection',async()=>{
+  const h=await preparePendingReview();let calls=0;
+  h.apply=async()=>{calls++;throw new Error('Network interrupted');};
+  h.value().applyKeywords();h.render();await h.pump();
+  assert.equal(h.value().reviewActivity,null);assert.equal(h.value().needsReload,false);
+  assert.deepEqual(h.value().selectedKeywords.map(item=>item.keyword),pendingNames);
+  assert.equal(h.value().step,0);assert.equal(calls,1);
+  for(const name of pendingNames){h.value().toggleKeyword(name,true);h.render();}
+  assert.equal(h.value().selectedKeywords.length,0);h.dispose();
 });
