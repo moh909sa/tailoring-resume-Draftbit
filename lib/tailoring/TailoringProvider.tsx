@@ -35,6 +35,7 @@ import {
 } from "@/lib/tailoring/types";
 
 type ReviewProblem = {
+  severity: "error" | "info";
   kind: "retry" | "conflict" | "expired" | "validation" | "unavailable" | "auth";
   message: string;
 };
@@ -121,7 +122,7 @@ function problemFor(error: unknown): ReviewProblem {
             : status === 409
               ? "conflict"
               : "retry";
-  return { kind, message };
+  return { kind, message, severity: kind === "expired" || kind === "conflict" ? "info" : "error" };
 }
 function remainingSelections(
   selected: KeywordSelection[],
@@ -141,7 +142,13 @@ function restoredSnapshot(
   value: unknown,
 ): Pick<
   RunState,
-  "tailoringId" | "lastPreviewId" | "input" | "step" | "selectedKeywords" | "pendingJobReview" | "saved"
+  | "tailoringId"
+  | "lastPreviewId"
+  | "input"
+  | "step"
+  | "selectedKeywords"
+  | "pendingJobReview"
+  | "saved"
 > | null {
   if (!isRecord(value) || typeof value.tailoringId !== "string" || !value.tailoringId) return null;
   const input =
@@ -251,6 +258,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
         needsReload: false,
         reviewProblem: previewHasExpired(preview)
           ? {
+              severity: "info",
               kind: "expired",
               message:
                 "This preview has expired. Your draft and selections are still here. Create a new preview to continue.",
@@ -367,7 +375,12 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
         const raw = await AsyncStorage.getItem(storageKey(ownerId));
         const restored = restoredSnapshot(raw ? (JSON.parse(raw) as unknown) : null);
         if (active && owner.current === ownerId && restored)
-          update((state) => ({ ...state, ...restored, status: "success", needsReload: !restored.saved }));
+          update((state) => ({
+            ...state,
+            ...restored,
+            status: "success",
+            needsReload: !restored.saved,
+          }));
       } catch {
         /* The server can recover jobs without a device cache. */
       } finally {
@@ -411,7 +424,13 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
   const reloadReview = useCallback(
     async (requestedId?: string): Promise<void> => {
       const id = requestedId ?? current.current.tailoringId;
-      if (!id || !ownerId || request.current || current.current.hydrating || (current.current.saved && id === current.current.tailoringId))
+      if (
+        !id ||
+        !ownerId ||
+        request.current ||
+        current.current.hydrating ||
+        (current.current.saved && id === current.current.tailoringId)
+      )
         return;
       const controller = new AbortController();
       request.current = controller;
@@ -436,6 +455,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
             ...state,
             step: 1,
             reviewProblem: {
+              severity: "info",
               kind: "conflict",
               message: "Your draft has changed. Review the latest changes before saving.",
             },
@@ -479,6 +499,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
         update((value) => ({
           ...value,
           reviewProblem: {
+            severity: "info",
             kind: "expired",
             message:
               "This preview has expired. Create a new preview before applying keywords or saving.",
@@ -502,6 +523,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
         update((value) => ({
           ...value,
           reviewProblem: {
+            severity: "info",
             kind: "validation",
             message:
               "Choose suggested keywords and select ‘I have this’ for every new skill. Keep within the remaining keyword limit.",
@@ -543,6 +565,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
                 ...value,
                 step: 1,
                 reviewProblem: {
+                  severity: "info",
                   kind: "conflict",
                   message:
                     "Your draft changed since you reviewed it. Check the latest changes, then confirm again.",
@@ -586,6 +609,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
                   ...value,
                   step: action === "confirm" && changed ? 1 : value.step,
                   reviewProblem: {
+                    severity: "info",
                     kind: problem.kind === "expired" && changed ? "conflict" : problem.kind,
                     message: changed
                       ? "The latest draft is loaded. Check its updated score and changes before continuing."
@@ -657,6 +681,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
           update((value) => ({
             ...value,
             reviewProblem: {
+              severity: "info",
               kind: "validation",
               message: `You can add ${options.remaining_slots} more keyword${options.remaining_slots === 1 ? "" : "s"} to this draft. Deselect one to choose another.`,
             },

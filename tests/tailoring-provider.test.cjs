@@ -36,12 +36,12 @@ function harness(initial) {
     '@/lib/auth/AuthProvider':{useAuth:()=>({session:h.owner?{user:{id:h.owner}}:null})},
     '@/lib/cv/types':{isRecord:v=>typeof v==='object'&&v!==null&&!Array.isArray(v)},
     '@/lib/tailoring/types':{keywordKey:s=>s.toLowerCase(),previewHasExpired:()=>false},
-    '@/lib/cv/api':{applyTailoringKeywords:(...args)=>h.apply(...args),CvApiError:class extends Error{},loadTailoringReview:async(owner,id)=>{h.reads.push([owner,id]);return h.load(owner,id);}}
+    '@/lib/cv/api':{confirmTailoring:(...args)=>h.confirm(...args),applyTailoringKeywords:(...args)=>h.apply(...args),CvApiError:class extends Error{},loadTailoringReview:async(owner,id)=>{h.reads.push([owner,id]);return h.load(owner,id);}}
   };
   new Function('require','module','exports',compiled.outputText)(name=>Object.hasOwn(mocks,name)?mocks[name]:require(name),mod,mod.exports);
   h.render=()=>{cursor=0;dirty=false;value=mod.exports.TailoringProvider({children:null}).props.value;for(const effect of effects.splice(0))effect();return value;};
   h.pump=async()=>{for(let n=0;n<12;n++){await tick();if(dirty)h.render();}return value;};
-  h.value=()=>value;h.managers=managers;h.dispose=()=>slots.forEach(s=>s.cleanup?.());h.render();return h;
+  h.apiError=(message,status)=>Object.assign(new mocks['@/lib/cv/api'].CvApiError(message),{status});h.value=()=>value;h.managers=managers;h.dispose=()=>slots.forEach(s=>s.cleanup?.());h.render();return h;
 }
 const input={resumeId:'source-cv',filename:'Original.pdf',jobDescription:'Full exact job description. '.repeat(5).trim()};
 const reference=saved=>JSON.stringify({tailoringId,previewId:'preview-1',saved,input,step:1,selectedKeywords:[],pendingJobReview:false});
@@ -93,9 +93,27 @@ test('failed apply retains pending selections through reconciliation for retry o
   const h=await preparePendingReview();let calls=0;
   h.apply=async()=>{calls++;throw new Error('Network interrupted');};
   h.value().applyKeywords();h.render();await h.pump();
-  assert.equal(h.value().reviewActivity,null);assert.equal(h.value().needsReload,false);
+  assert.equal(h.value().reviewActivity,null);assert.equal(h.value().needsReload,false);assert.equal(h.value().reviewProblem.kind,'retry');assert.equal(h.value().reviewProblem.severity,'info');
   assert.deepEqual(h.value().selectedKeywords.map(item=>item.keyword),pendingNames);
   assert.equal(h.value().step,0);assert.equal(calls,1);
   for(const name of pendingNames){h.value().toggleKeyword(name,true);h.render();}
   assert.equal(h.value().selectedKeywords.length,0);h.dispose();
+});
+
+test('load failures explicitly report error severity and retain the recovery reference',async()=>{
+ const h=harness([['tailoring-review-v1:owner-a',reference(false)]]);await h.pump();
+ h.load=()=>{throw new Error('Load failed');};await h.value().reloadReview();await h.pump();
+ assert.equal(h.value().reviewProblem.severity,'error');assert.equal(h.value().needsReload,true);assert.equal(h.value().tailoringId,tailoringId);h.dispose();
+});
+test('rejected keyword requests use error severity and keep both pending selections',async()=>{
+ const h=await preparePendingReview();h.apply=async()=>{throw h.apiError('Apply rejected',422);};
+ h.value().applyKeywords();h.render();await h.pump();
+ assert.equal(h.value().reviewProblem.severity,'error');assert.equal(h.value().reviewProblem.kind,'validation');assert.equal(h.value().selectedKeywords.length,2);assert.equal(h.value().step,0);h.dispose();
+});
+test('failed confirmation stays unsaved with explicit error severity and intact content',async()=>{
+ const h=await preparePendingReview();for(const name of pendingNames){h.value().toggleKeyword(name,true);h.render();}
+ h.value().setStep(2);h.render();const before=JSON.stringify(h.value().preview);let confirms=0;
+ h.confirm=async()=>{confirms++;throw h.apiError('Save rejected',422);};
+ h.value().confirm();h.render();await h.pump();
+ assert.equal(confirms,1);assert.equal(h.value().saved,false);assert.equal(h.value().step,2);assert.equal(h.value().reviewProblem.severity,'error');assert.equal(JSON.stringify(h.value().preview),before);h.dispose();
 });

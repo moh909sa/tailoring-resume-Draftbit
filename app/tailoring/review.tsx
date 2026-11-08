@@ -6,6 +6,7 @@ import { AppScreen } from "@/components/layout/AppScreen";
 import { ScreenHeader } from "@/components/layout/ScreenHeader";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/cv/Notice";
 import { ReviewContent, reviewItems, type ReviewItem } from "@/components/tailoring/ReviewContent";
 import {
   AtsScoreCard,
@@ -68,7 +69,6 @@ type WizardItem = { connected?: string } & (
     }
   | { id: string; kind: "resume"; item: ReviewItem }
   | { id: string; kind: "warning"; message: string }
-  | { id: string; kind: "review-note"; message: string }
   | { id: string; kind: "skill-added"; change: ResumeChange }
 );
 
@@ -191,7 +191,13 @@ export default function TailoringReviewScreen() {
           ) : (
             <>
               {run.reviewProblem ? (
-                <ReviewNote message={run.reviewProblem.message} />
+                <>
+                  {run.reviewProblem.severity === "error" ? (
+                    <Notice tone="error" message={run.reviewProblem.message} />
+                  ) : (
+                    <ReviewNote message={run.reviewProblem.message} />
+                  )}
+                </>
               ) : (
                 <Text className="text-body leading-6 text-muted-foreground">
                   {!ownerId
@@ -489,8 +495,6 @@ export default function TailoringReviewScreen() {
         ) : (
           <ReviewNote message={item.message} />
         );
-      case "review-note":
-        return <ReviewNote message={item.message} />;
     }
   }
   function renderRow(item: WizardItem, index = items.indexOf(item)) {
@@ -612,7 +616,13 @@ export default function TailoringReviewScreen() {
             ) : null}
             {run.reviewProblem && !expired ? (
               <View className="gap-2">
-                <ReviewNote message={run.reviewProblem.message} />
+                <>
+                  {run.reviewProblem.severity === "error" ? (
+                    <Notice tone="error" message={run.reviewProblem.message} />
+                  ) : (
+                    <ReviewNote message={run.reviewProblem.message} />
+                  )}
+                </>
                 <Button
                   variant="outline"
                   onPress={() => void reloadReview()}

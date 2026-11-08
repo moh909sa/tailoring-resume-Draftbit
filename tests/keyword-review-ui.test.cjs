@@ -309,7 +309,11 @@ test("pending Incident management and Technical documentation gate Continue unti
   // A failed apply leaves pending selections available for retry.
   toggle("Incident management");
   toggle("Technical documentation");
-  run.reviewProblem = { kind: "retry", message: "Apply failed. Your selections are preserved." };
+  run.reviewProblem = {
+    severity: "error",
+    kind: "retry",
+    message: "Apply failed. Your selections are preserved.",
+  };
   screen = render();
   assert.equal(button(screen, "Continue to Changes").props.disabled, true);
   assert.equal(button(screen, "Apply Keywords (2)").props.disabled, false);
@@ -350,7 +354,11 @@ test("only skill attestation uses a warning card; other review notes stay neutra
   }
   assert.equal(JSON.stringify(run.preview), snapshot);
   run.step = 0;
-  run.reviewProblem = { kind: "retry", message: "Connection lost. Your draft is preserved." };
+  run.reviewProblem = {
+    severity: "info",
+    kind: "retry",
+    message: "Connection lost. Your draft is preserved.",
+  };
   let screen = render();
   let list = nodes(screen).find((node) => node.type === "FlatList");
   assert.ok(
@@ -366,7 +374,7 @@ test("only skill attestation uses a warning card; other review notes stay neutra
         (node) => node.type === "Button" && text(node) === "Reload review" && !node.props.disabled,
       ),
   );
-  run.reviewProblem = { kind: "expired", message: "Preview expired" };
+  run.reviewProblem = { severity: "info", kind: "expired", message: "Preview expired" };
   run.input = { resumeId: "source", jobDescription: "Saved input" };
   list = nodes(render()).find((node) => node.type === "FlatList");
   assert.ok(
@@ -379,6 +387,45 @@ test("only skill attestation uses a warning card; other review notes stay neutra
     nodes(list.props.ListHeaderComponent).some(
       (node) => node.type === "Button" && text(node) === "Create new preview",
     ),
+  );
+});
+
+test("failed review actions use Notice while successful retry-kind reloads stay informational", () => {
+  const { run, render } = screenHarness();
+  run.step = 2;
+  let reloads = 0;
+  run.reloadReview = () => {
+    reloads++;
+  };
+  const message = "The save could not be confirmed. Your draft is preserved.";
+  run.reviewProblem = { kind: "retry", severity: "error", message };
+  const draft = JSON.stringify(run.preview);
+  let list = nodes(render()).find((node) => node.type === "FlatList");
+  let header = nodes(list.props.ListHeaderComponent);
+  assert.ok(
+    header.some(
+      (node) =>
+        node.type === "Notice" && node.props.tone === "error" && node.props.message === message,
+    ),
+  );
+  header.find((node) => node.type === "Button" && text(node) === "Reload review").props.onPress();
+  assert.equal(reloads, 1);
+  // Same kind and identical copy: severity comes from the outcome, not the words.
+  run.reviewProblem = { kind: "retry", severity: "info", message };
+  list = nodes(render()).find((node) => node.type === "FlatList");
+  header = nodes(list.props.ListHeaderComponent);
+  assert.ok(
+    header.some((node) => node.type === primitives.ReviewNote && node.props.message === message),
+  );
+  assert.ok(!header.some((node) => node.type === "Notice"));
+  assert.equal(JSON.stringify(run.preview), draft);
+  run.tailoringId = run.preview.tailoring_id;
+  run.preview = null;
+  run.reviewProblem = { kind: "retry", severity: "error", message: "Review load failed." };
+  const missing = nodes(render());
+  assert.ok(missing.some((node) => node.type === "Notice" && node.props.tone === "error"));
+  assert.ok(
+    missing.some((node) => node.type === "Button" && text(node) === "Retry loading review"),
   );
 });
 
@@ -1074,6 +1121,7 @@ test("Save preserves Back, explicit confirmation, loading, errors, expiration an
   assert.equal(back.props.disabled, true);
   run.reviewActivity = null;
   run.reviewProblem = {
+    severity: "error",
     kind: "retry",
     message: "The save could not be confirmed. Your draft is preserved.",
   };
@@ -1082,7 +1130,9 @@ test("Save preserves Back, explicit confirmation, loading, errors, expiration an
   assert.ok(
     nodes(list.props.ListHeaderComponent).some(
       (node) =>
-        node.type === primitives.ReviewNote && node.props.message === run.reviewProblem.message,
+        node.type === "Notice" &&
+        node.props.tone === "error" &&
+        node.props.message === run.reviewProblem.message,
     ),
   );
   assert.equal(run.preview, draft);
