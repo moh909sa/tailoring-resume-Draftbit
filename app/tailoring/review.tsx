@@ -67,8 +67,7 @@ type WizardItem = { connected?: string } & (
       verification?: boolean;
     }
   | { id: string; kind: "resume"; item: ReviewItem }
-  | { id: string; kind: "warning"; message: string }
-  | { id: string; kind: "review-note"; message: string }
+  | { id: string; kind: "warning"; message: string; highlightAttestation?: true }
   | { id: string; kind: "skill-added"; change: ResumeChange }
 );
 
@@ -272,6 +271,7 @@ export default function TailoringReviewScreen() {
       items.push({
         id: "attestation-safety",
         kind: "warning",
+        highlightAttestation: true,
         message: "Only select skills you really have. You may be asked about them in interviews.",
       });
       options.needs_attestation.forEach((keyword, index) =>
@@ -484,15 +484,12 @@ export default function TailoringReviewScreen() {
       case "resume":
         return <ReviewContent item={item.item} document />;
       case "warning":
-        return <SafetyNote message={item.message} />;
-      case "review-note":
-        return (
-          <View className="flex-row items-start gap-2.5 p-4">
-            <LucideIcon name="Info" size={16} className="mt-0.5 text-muted-foreground" />
-            <Text className="text-caption flex-1 leading-5 text-muted-foreground">
-              {item.message}
-            </Text>
-          </View>
+        return item.highlightAttestation ? (
+          <SafetyNote message={item.message} />
+        ) : (
+          <Text className="px-4 py-3 text-caption leading-5 text-muted-foreground">
+            {item.message}
+          </Text>
         );
     }
   }
@@ -631,7 +628,10 @@ export default function TailoringReviewScreen() {
             ) : null}
             {expired ? (
               <View className="gap-3">
-                <SafetyNote message="This preview has expired. Your current draft and selections are preserved. Create a new preview to continue." />
+                <Text className="text-caption leading-5 text-muted-foreground">
+                  This preview has expired. Your current draft and selections are preserved.
+                  Create a new preview to continue.
+                </Text>
                 {run.input ? (
                   <Button
                     variant="outline"
