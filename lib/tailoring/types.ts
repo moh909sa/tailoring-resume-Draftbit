@@ -3,7 +3,7 @@ import { isRecord } from "@/lib/cv/types";
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 export type JsonObject = { [key: string]: JsonValue };
 export type TailoringInput = { resumeId: string; filename: string; jobDescription: string };
-export type ReviewStep = 0 | 1 | 2;
+export type ReviewStep = 0 | 1;
 export type KeywordSelection = { keyword: string; attested: boolean };
 export const SUMMARY_KEYS = [
   "skills_added",

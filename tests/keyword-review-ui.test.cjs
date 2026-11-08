@@ -43,7 +43,7 @@ const grounding =
 test("grounding warnings stay intact, appear in Changes and Save with human locations", () => {
   const original = [grounding, "Check all qualifications."];
   assert.deepEqual(warnings.reviewWarningsForStep(original, 0), [original[1]]);
-  for (const step of [1, 2]) {
+  for (const step of [1]) {
     const messages = warnings.reviewWarningsForStep(original, step);
     assert.match(messages[0], /bullet 2 in work experience 1/);
     assert.match(messages[0], /original CV/);
@@ -121,6 +121,8 @@ test("keyword toggles retain stable classes, checked state and visible selection
 });
 
 function screenHarness() {
+  const effects = [];
+  const navigation = [];
   const preview = makeReview();
   preview.review.keyword_options.supported = Array.from(
     { length: 40 },
@@ -140,6 +142,10 @@ function screenHarness() {
     hydrating: false,
     reviewActivity: null,
     selectedKeywords: [],
+    confirmCalls: 0,
+    confirm: () => {
+      run.confirmCalls++;
+    },
     setStep: (step) => {
       run.step = step;
     },
@@ -156,7 +162,9 @@ function screenHarness() {
     react: {
       ...React,
       useCallback: (fn) => fn,
-      useEffect: () => {},
+      useEffect: (fn) => {
+        effects.push(fn);
+      },
       useRef: () => ({ current: null }),
       useState: (init) => {
         const index = stateIndex++;
@@ -171,14 +179,14 @@ function screenHarness() {
       },
     },
     "expo-router": {
-      router: {},
+      router: { replace: (route) => navigation.push(route), canGoBack: () => false },
       Stack: { Screen: "StackScreen" },
       useFocusEffect: () => {},
       useLocalSearchParams: () => ({}),
     },
     "react-native": {
       ActivityIndicator: "ActivityIndicator",
-      BackHandler: {},
+      BackHandler: { addEventListener: () => ({ remove() {} }) },
       FlatList: "FlatList",
       View: "View",
     },
@@ -200,6 +208,8 @@ function screenHarness() {
   const Screen = loadSource("app/tailoring/review.tsx", mocks).default;
   return {
     run,
+    navigation,
+    flushEffects: () => effects.splice(0).forEach((fn) => fn()),
     render: () => {
       stateIndex = 0;
       return Screen();
@@ -331,7 +341,7 @@ test("only skill attestation uses a warning card; other review notes stay neutra
   const { run, render } = screenHarness();
   run.preview.review.warnings.push("Some details need checking against your original CV.");
   const snapshot = JSON.stringify(run.preview);
-  for (const step of [0, 1, 2]) {
+  for (const step of [0, 1]) {
     run.step = step;
     const list = nodes(render()).find((node) => node.type === "FlatList");
     for (const item of list.props.data.filter((item) => item.kind === "warning")) {
@@ -392,7 +402,7 @@ test("only skill attestation uses a warning card; other review notes stay neutra
 
 test("failed review actions use Notice while successful retry-kind reloads stay informational", () => {
   const { run, render } = screenHarness();
-  run.step = 2;
+  run.step = 1;
   let reloads = 0;
   run.reloadReview = () => {
     reloads++;
@@ -434,7 +444,7 @@ test("verification rejection summaries use friendly copy outside Keywords withou
     const summary = `${count} change(s) rejected during verification`;
     const messages = [summary, "Please check your qualifications."];
     assert.deepEqual(warnings.reviewWarningsForStep(messages, 0), [messages[1]]);
-    for (const step of [1, 2]) {
+    for (const step of [1]) {
       assert.equal(
         warnings.reviewWarningsForStep(messages, step)[0],
         `${count} suggested ${count === 1 ? "change was" : "changes were"} excluded during verification. Check the updated text before saving.`,
@@ -516,9 +526,9 @@ test("simplified Changes preserves individual risks, dynamic counts and unmatche
     ),
   );
   assert.ok(!list.props.data.some((item) => item.id === "resume-toggle"));
-  run.step = 2;
+  run.step = 1;
   const saveList = nodes(render()).find((node) => node.type === "FlatList");
-  assert.ok(saveList.props.data.some((item) => item.id === "resume-heading"));
+  assert.ok(!saveList.props.data.some((item) => item.id === "resume-heading"));
   assert.ok(
     !saveList.props.data.some(
       (item) => item.id === "resume-toggle" || item.id === "save-review-toggle",
@@ -637,10 +647,14 @@ test("connected accordions keep compact skill additions without altering verific
     .renderItem({ item: list.props.data.find((item) => item.section === "skill") })
     .props.children.props.onPress();
   list = nodes(render()).find((node) => node.type === "FlatList");
-  assert.equal(list.props.data.filter((item) => item.connected === "skill").length, 1);
-  run.step = 2;
+  assert.ok(
+    list.props.data
+      .filter((item) => item.connected === "skill")
+      .every((item) => item.kind === "section" || item.kind === "warning"),
+  );
+  run.step = 1;
   const saveList = nodes(render()).find((node) => node.type === "FlatList");
-  assert.ok(saveList.props.data.some((item) => item.kind === "resume"));
+  assert.ok(!saveList.props.data.some((item) => item.kind === "resume"));
   assert.ok(
     !saveList.props.data.some(
       (item) => item.id === "resume-toggle" || item.id === "save-review-toggle",
@@ -791,8 +805,9 @@ test("description list removes company headings, retaining paired bullets and wa
   button("Continue to Changes").props.onPress();
   assert.equal(run.step, 1);
   screen = render();
-  button("Continue").props.onPress();
-  assert.equal(run.step, 2);
+  button("Continue to Edit CV").props.onPress();
+  assert.equal(run.step, 1);
+  assert.equal(run.confirmCalls, 1);
 });
 
 test("description After highlights added applied phrases only and has no generic diff styling", () => {
@@ -1053,46 +1068,35 @@ test("Summary ignores keywords placed elsewhere and leaves wording-only edits pl
   );
 });
 
-test("Save keeps live metrics and directly displays the complete read-only resume without accordions", () => {
+test("Changes is step 2 of 2 and saves directly without the old repeated summary screen", () => {
   const { run, render } = screenHarness();
-  run.step = 2;
-  run.preview = makeReview("latest-preview", 81, ["PLC", "OPC-UA"], [76, 81]);
+  run.step = 1;
   const before = JSON.stringify(run.preview);
   const screen = render();
   const list = nodes(screen).find((node) => node.type === "FlatList");
-  const metrics = nodes(list.props.ListHeaderComponent).filter(
-    (node) =>
-      node.props.accessibilityLabel &&
-      /^(Job Match|Changes Made|Keywords Applied):/.test(node.props.accessibilityLabel),
+  assert.match(text(list.props.ListHeaderComponent), /Step 2 of 2/);
+  assert.ok(
+    !list.props.data.some((item) => item.kind === "resume" || item.id === "resume-heading"),
   );
-  assert.deepEqual(
-    metrics.map((node) => node.props.accessibilityLabel),
-    ["Job Match: 81", "Changes Made: 6", "Keywords Applied: 2"],
+  assert.ok(
+    !nodes(list.props.ListHeaderComponent).some((node) =>
+      /^(Job Match|Changes Made|Keywords Applied):/.test(node.props.accessibilityLabel ?? ""),
+    ),
   );
-  assert.ok(metrics.every((node) => node.props.className.includes("flex-1")));
-  assert.match(text(list.props.ListHeaderComponent), /Your original CV stays unchanged\./);
-  const heading = list.props.data.find((item) => item.id === "resume-heading");
-  assert.equal(heading.title, "Your tailored CV");
-  assert.match(heading.body, /Read-only/);
-  assert.ok(list.props.data.some((item) => item.kind === "warning"));
-  assert.ok(!list.props.data.some((item) => item.kind === "section"));
-  const resume = list.props.data.filter((item) => item.kind === "resume");
-  assert.deepEqual(
-    resume.map((item) => item.item),
-    previewContent.reviewItems(run.preview.preview, "resume"),
+  assert.match(text(screen), /We’ll save a separate copy for you to edit\./);
+  assert.ok(
+    nodes(screen).some((node) => node.type === "Button" && text(node) === "Continue to Edit CV"),
   );
-  assert.equal(resume[0].item.id, "personalInfo");
-  assert.ok(!nodes(screen).some((node) => node.type === "TextInput"));
   assert.equal(
-    JSON.stringify(run.preview),
-    before,
-    "review never changes draft facts or verification flags",
+    primitives.ReviewStepper({ step: 1 }).props.accessibilityLabel,
+    "Step 2 of 2: Changes",
   );
+  assert.equal(JSON.stringify(run.preview), before);
 });
 
-test("Save preserves Back, explicit confirmation, loading, errors, expiration and acknowledgement", () => {
+test("Changes preserves Back, explicit save, loading, errors, expiration and acknowledgement", () => {
   const { run, render } = screenHarness();
-  run.step = 2;
+  run.step = 1;
   let calls = 0;
   run.confirm = () => {
     calls++;
@@ -1101,12 +1105,12 @@ test("Save preserves Back, explicit confirmation, loading, errors, expiration an
   let back = nodes(screen).find((node) => node.type === "Button" && text(node) === "Back");
   const draft = run.preview;
   back.props.onPress();
-  assert.equal(run.step, 1);
+  assert.equal(run.step, 0);
   assert.equal(run.preview, draft);
-  run.step = 2;
+  run.step = 1;
   screen = render();
   let confirm = nodes(screen).find(
-    (node) => node.type === "Button" && text(node) === "Confirm & Save",
+    (node) => node.type === "Button" && text(node) === "Continue to Edit CV",
   );
   assert.equal(calls, 0);
   confirm.props.onPress();
@@ -1138,10 +1142,37 @@ test("Save preserves Back, explicit confirmation, loading, errors, expiration an
   assert.equal(run.preview, draft);
   run.preview.review.preview_expires_at = "2020-01-01T00:00:00Z";
   screen = render();
-  confirm = nodes(screen).find((node) => node.type === "Button" && text(node) === "Confirm & Save");
+  confirm = nodes(screen).find(
+    (node) => node.type === "Button" && text(node) === "Continue to Edit CV",
+  );
   assert.equal(confirm.props.disabled, true);
   run.saved = true;
   assert.match(text(render()), /Your tailored CV is saved/);
+});
+
+test("only a saved acknowledgement opens the editor using its confirmed CV ID", () => {
+  const { run, render, flushEffects, navigation } = screenHarness();
+  run.step = 1;
+  run.preview.review.preview_expires_at = null;
+  render();
+  flushEffects();
+  assert.deepEqual(navigation, []);
+  run.reviewActivity = "confirm";
+  render();
+  flushEffects();
+  assert.deepEqual(navigation, []);
+  run.reviewActivity = null;
+  run.saved = true;
+  run.confirmation = {
+    tailoring_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    status: "ready",
+    tailored_cv: {},
+  };
+  render();
+  flushEffects();
+  assert.deepEqual(navigation, [
+    { pathname: "/cv-editor/[id]", params: { id: run.confirmation.tailoring_id } },
+  ]);
 });
 
 test("resume ordering uses standards, retains unknown content and handles additional/custom containers", () => {
@@ -1240,85 +1271,53 @@ test("explicit sectionMeta order and user section names survive while identity a
   assert.ok(!items.some((item) => item.id === "sectionMeta"));
 });
 
-test("Save renders one continuous document with one heading per multi-entry section", () => {
-  const { run, render } = screenHarness();
-  run.step = 2;
-  const resume = run.preview.preview.resume_preview;
+test("underlying resume presentation still retains complete multi-entry content", () => {
+  const resume = makeReview().preview.resume_preview;
   resume.workExperience.push({
     title: "Second position",
     company: "Second company",
-    dates: "2018–2020",
-    description: ["A complete long responsibility. ".repeat(30), "Another exact bullet."],
+    description: ["Full responsibility. ".repeat(30)],
   });
-  resume.education = [
-    { degree: "First degree", institution: "First school", years: "2010–2014" },
-    { degree: "Second degree", institution: "Second school", years: "2014–2016" },
-  ];
+  resume.education = [{ degree: "Degree", institution: "School", years: "2010–2014" }];
   resume.unexpectedSection = { detail: "Unknown resume content remains." };
   const before = JSON.stringify(resume);
-  const list = nodes(render()).find((node) => node.type === "FlatList");
-  const rows = list.props.data.filter((item) => item.kind === "resume");
-  const headings = [];
-  for (let index = 0; index < rows.length; index++) {
-    const wrapper = list.props.renderItem({ item: rows[index] });
-    assert.ok(wrapper.props.className.includes("border-x"));
-    assert.equal(wrapper.props.className.includes("rounded-t-2xl"), index === 0);
-    assert.equal(wrapper.props.className.includes("rounded-b-2xl"), index === rows.length - 1);
-    assert.equal(wrapper.props.className.includes("mb-3"), index === rows.length - 1);
-    assert.equal(wrapper.props.children.props.document, true);
-    const content = previewContent.ReviewContent(wrapper.props.children.props);
-    assert.doesNotMatch(content.props.className, /rounded|bg-card/);
-    headings.push(
-      ...nodes(content)
-        .filter((node) => node.props.accessibilityRole === "header")
-        .map(text),
-    );
-  }
-  assert.equal(headings.filter((value) => value === "Work Experience").length, 1);
-  assert.equal(headings.filter((value) => value === "Education").length, 1);
-  assert.equal(rows[0].item.profile, true);
-  assert.equal(rows.filter((item) => item.item.id.startsWith("workExperience")).length, 2);
-  assert.equal(rows.filter((item) => item.item.id.startsWith("education")).length, 2);
-  assert.ok(rows.some((item) => item.item.value === resume.unexpectedSection));
-  // Render the document's pure value components to verify every field and long
-  // paragraph remains present in its original entry order.
-  function presentationText(element) {
-    if (element == null || typeof element === "boolean") return "";
-    if (Array.isArray(element)) return element.map(presentationText).join("");
-    if (typeof element !== "object") return String(element);
-    if (typeof element.type === "function") return presentationText(element.type(element.props));
-    return presentationText(element.props?.children);
+  const rows = previewContent.orderedResumeItems(resume);
+  function presentationText(node) {
+    if (node == null || typeof node === "boolean") return "";
+    if (Array.isArray(node)) return node.map(presentationText).join("");
+    if (typeof node !== "object") return String(node);
+    if (typeof node.type === "function") return presentationText(node.type(node.props));
+    return presentationText(node.props?.children);
   }
   const output = rows
-    .map((item) =>
-      presentationText(previewContent.ReviewContent({ item: item.item, document: true })),
-    )
+    .map((item) => presentationText(previewContent.ReviewContent({ item, document: true })))
     .join("");
   assert.ok(output.includes(resume.workExperience[1].description[0]));
   assert.ok(output.includes("Second positionSecond company"));
-  assert.ok(output.indexOf("First degree") < output.indexOf("Second degree"));
-  assert.ok(output.includes("First school"));
-  assert.ok(output.includes("Second school"));
+  assert.ok(output.includes("Unknown resume content remains."));
   assert.equal(JSON.stringify(resume), before);
 });
 
-test("confirmation displays every verification warning, including warnings about added skills", () => {
+test("Changes keeps every verification note visible even when its related accordion is collapsed", () => {
   const { run, render } = screenHarness();
-  run.step = 2;
+  run.step = 1;
   run.preview.review.warnings = [
     grounding,
     "Check additional.technicalSkills against your original CV.",
     "2 change(s) rejected during verification",
   ];
-  const list = nodes(render()).find((n) => n.type === "FlatList");
+  let list = nodes(render()).find((node) => node.type === "FlatList");
+  const expected = warnings.reviewWarningsForStep(run.preview.review.warnings, 1);
   assert.deepEqual(
-    list.props.data.filter((i) => i.kind === "warning").map((i) => i.message),
-    warnings.reviewWarningsForStep(run.preview.review.warnings, 2),
+    new Set(list.props.data.filter((item) => item.kind === "warning").map((item) => item.message)),
+    new Set(expected),
   );
-  assert.ok(
-    list.props.data.findIndex((i) => i.kind === "warning") <
-      list.props.data.findIndex((i) => i.kind === "resume"),
-  );
+  const skillNote = list.props.data.find((item) => item.message === expected[1]);
+  assert.equal(skillNote.connected, "skill");
+  const skillHeader = list.props.data.find((item) => item.section === "skill");
+  list.props.renderItem({ item: skillHeader }).props.children.props.onPress();
+  list = nodes(render()).find((node) => node.type === "FlatList");
+  assert.equal(list.props.data.filter((item) => item.message === expected[1]).length, 1);
 });
 test("Changes omits Engine feedback while retaining complete underlying reports and Continue to Save", () => {
   const preview = makeReview().preview;
@@ -1371,12 +1370,12 @@ test("Changes omits Engine feedback while retaining complete underlying reports 
   );
   assert.ok(list.props.data.some((item) => item.kind === "warning"));
   const continueButton = nodes(screen).find(
-    (node) => node.type === "Button" && text(node) === "Continue",
+    (node) => node.type === "Button" && text(node) === "Continue to Edit CV",
   );
   assert.equal(continueButton.props.disabled, false);
   continueButton.props.onPress();
-  assert.equal(run.step, 2);
-  assert.match(text(render()), /Confirm & Save/);
+  assert.equal(run.step, 1);
+  assert.match(text(render()), /Continue to Edit CV/);
   assert.equal(JSON.stringify(preview), before);
 });
 test("read-only resume marks hidden sections without dropping their contents", () => {

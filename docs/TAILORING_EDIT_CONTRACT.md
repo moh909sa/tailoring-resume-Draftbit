@@ -1,6 +1,6 @@
 # Saved mobile CV editing contract
 
-The tailoring review remains read-only. After Keywords and Changes, Confirm & Save sends `expected_preview_id` to `POST /api/v1/mobile/tailor/{tailoring_id}/confirm`. Railway atomically rejects a changed preview. A successful acknowledgement opens the saved tailored CV editor; older bodyless confirmation clients remain compatible.
+The tailoring review remains read-only. On Changes (Step 2 of 2), Continue to Edit CV first checks the latest server preview and then sends `expected_preview_id` to `POST /api/v1/mobile/tailor/{tailoring_id}/confirm`. Railway atomically rejects a changed preview. A successful acknowledgement opens the saved tailored CV editor; older bodyless confirmation clients remain compatible.
 
 All editor operations require the existing Supabase bearer session and ownership of the tailoring record and its saved engine resume. They never modify the uploaded original. The unauthenticated desktop routes stay blocked in mobile deployments.
 

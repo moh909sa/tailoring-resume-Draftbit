@@ -7,12 +7,10 @@ import { ScreenHeader } from "@/components/layout/ScreenHeader";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/cv/Notice";
-import { ReviewContent, reviewItems, type ReviewItem } from "@/components/tailoring/ReviewContent";
 import {
   AtsScoreCard,
   ChangeComparison,
   ChangeSummaryCards,
-  formatScore,
   KeywordOption,
   KeywordDestinations,
   ReviewStepper,
@@ -24,7 +22,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useTailoring } from "@/lib/tailoring/TailoringProvider";
 import {
-  atsScore,
   keywordKey,
   previewHasExpired,
   type ResumeChange,
@@ -45,7 +42,6 @@ const stepCopy = [
     title: "Review changes",
     body: "See exactly what changed, and make sure every claim feels true to you.",
   },
-  { title: "Confirm & Save", body: "" },
 ];
 type WizardItem = { connected?: string } & (
   | { id: string; kind: "heading"; title: string; body: string }
@@ -67,7 +63,6 @@ type WizardItem = { connected?: string } & (
       descriptionComparison?: boolean;
       verification?: boolean;
     }
-  | { id: string; kind: "resume"; item: ReviewItem }
   | { id: string; kind: "warning"; message: string }
   | { id: string; kind: "skill-added"; change: ResumeChange }
 );
@@ -81,6 +76,7 @@ export default function TailoringReviewScreen() {
   const routeId = typeof params.tailoringId === "string" ? params.tailoringId : undefined;
   const tailoringId = routeId ?? run.tailoringId ?? undefined;
   const { reloadReview, setStep } = run;
+  const step: ReviewStep = run.step === 0 ? 0 : 1;
   const ownerId = session?.user?.id;
   const list = useRef<FlatList<WizardItem>>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["summary"]));
@@ -98,6 +94,10 @@ export default function TailoringReviewScreen() {
     run.needsReload ||
     run.reviewProblem?.kind === "unavailable" ||
     run.reviewProblem?.kind === "auth";
+
+  useEffect(() => {
+    if (run.step !== step) setStep(step);
+  }, [run.step, step, setStep]);
 
   useFocusEffect(
     useCallback(() => {
@@ -117,19 +117,19 @@ export default function TailoringReviewScreen() {
   useEffect(() => {
     const back = BackHandler.addEventListener("hardwareBackPress", () => {
       if (busy) return true;
-      if (run.step > 0 && !run.saved) {
-        setStep((run.step - 1) as ReviewStep);
+      if (step > 0 && !run.saved) {
+        setStep((step - 1) as ReviewStep);
         return true;
       }
       return false;
     });
     return () => back.remove();
-  }, [busy, run.step, run.saved, setStep]);
+  }, [busy, step, run.saved, setStep]);
   useEffect(() => {
     list.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [run.step, run.preview?.tailoring_id, run.tailoringId, routeMatches]);
+  }, [step, run.preview?.tailoring_id, run.tailoringId, routeMatches]);
   useEffect(() => {
-    const savedId = run.confirmation?.tailoring_id ?? run.preview?.tailoring_id ?? run.tailoringId;
+    const savedId = run.confirmation?.tailoring_id ?? run.tailoringId;
     if (routeMatches && run.saved && savedId)
       router.replace({ pathname: "/cv-editor/[id]", params: { id: savedId } });
   }, [run.saved, run.confirmation?.tailoring_id, run.preview?.tailoring_id]);
@@ -256,7 +256,7 @@ export default function TailoringReviewScreen() {
     needs_attestation: uniqueKeywords(review.keyword_options.needs_attestation),
   };
   const selected = new Set(run.selectedKeywords.map((item) => keywordKey(item.keyword)));
-  if (run.step === 0) {
+  if (step === 0) {
     if (options.supported.length) {
       items.push({
         id: "supported-heading",
@@ -299,14 +299,13 @@ export default function TailoringReviewScreen() {
       });
   }
   const warningsByChange = new Map<ResumeChange, string[]>();
-  reviewWarningsForStep(review.warnings, run.step).forEach((message, index) => {
-    // Attach verification to its exact comparison; also show every warning
-    // beside the final read-only document before confirmation.
+  reviewWarningsForStep(review.warnings, step).forEach((message, index) => {
+    // Keep verification beside its comparison, including when its section is collapsed.
     const rawWarning = review.warnings[index];
     const referencedPaths: string[] =
       rawWarning?.match(/[A-Za-z_]\w*(?:\[\d+\]|\.[A-Za-z_]\w*)+/g) ?? [];
     const relatedChange =
-      run.step === 1
+      step === 1
         ? review.change_sections
             .flatMap((section) => section.items)
             .find((change) => !!change.field_path && referencedPaths.includes(change.field_path))
@@ -320,7 +319,7 @@ export default function TailoringReviewScreen() {
       items.push({ id: `warning-${index}`, kind: "warning", message });
     }
   });
-  if (run.step === 1) {
+  if (step === 1) {
     const detailedRiskCount = review.change_sections.reduce(
       (count, section) =>
         count + section.items.filter((change) => change.confidence === "high").length,
@@ -335,7 +334,7 @@ export default function TailoringReviewScreen() {
       });
     }
   }
-  if (run.step === 1) {
+  if (step === 1) {
     review.change_sections.forEach((section, index) => {
       const highRisk = section.items.some((change) => change.confidence === "high");
       const connected = ["summary", "skill", "description"].includes(section.type)
@@ -359,6 +358,20 @@ export default function TailoringReviewScreen() {
         highRisk: section.type === "skill" ? false : highRisk,
         connected,
       });
+      if (!expanded.has(section.type)) {
+        section.items.forEach((change, changeIndex) =>
+          warningsByChange
+            .get(change)
+            ?.forEach((message, warningIndex) =>
+              items.push({
+                id: `collapsed-warning-${index}-${changeIndex}-${warningIndex}`,
+                kind: "warning",
+                message,
+                connected,
+              }),
+            ),
+        );
+      }
       if (expanded.has(section.type)) {
         section.items.forEach((change, changeIndex) => {
           const addedSkill = section.type === "skill" && change.change_type === "added";
@@ -399,17 +412,6 @@ export default function TailoringReviewScreen() {
             ? "The service reported no detailed changes. Check the current resume before saving."
             : "Detailed comparisons are unavailable. Reload the review, then check the full resume before saving.",
       });
-  }
-  if (run.step === 2) {
-    items.push({
-      id: "resume-heading",
-      kind: "heading",
-      title: "Your tailored CV",
-      body: "Read-only CV preview.",
-    });
-    reviewItems(run.preview.preview, "resume").forEach((item) =>
-      items.push({ id: "resume-" + item.id, kind: "resume", item }),
-    );
   }
 
   function renderItem(item: WizardItem) {
@@ -487,8 +489,6 @@ export default function TailoringReviewScreen() {
             )}
           </View>
         );
-      case "resume":
-        return <ReviewContent item={item.item} document />;
       case "warning":
         return item.id === "attestation-safety" ? (
           <SafetyNote message={item.message} />
@@ -498,21 +498,6 @@ export default function TailoringReviewScreen() {
     }
   }
   function renderRow(item: WizardItem, index = items.indexOf(item)) {
-    if (item.kind === "resume") {
-      const first = items[index - 1]?.kind !== "resume";
-      const last = items[index + 1]?.kind !== "resume";
-      return (
-        <View
-          className={cn(
-            "border-x border-border bg-card",
-            first && "overflow-hidden rounded-t-2xl border-t",
-            last && "mb-3 overflow-hidden rounded-b-2xl border-b",
-          )}
-        >
-          {renderItem(item)}
-        </View>
-      );
-    }
     if (!item.connected) return <View className="mb-3">{renderItem(item)}</View>;
     const header = item.kind === "section";
     const last = items[index + 1]?.connected !== item.connected;
@@ -529,7 +514,6 @@ export default function TailoringReviewScreen() {
       </View>
     );
   }
-  const score = atsScore(review);
   const activityLabel =
     run.reviewActivity === "keywords"
       ? "Applying selected keywords…"
@@ -568,7 +552,7 @@ export default function TailoringReviewScreen() {
           </View>
         }
       />
-      <ReviewStepper step={run.step} />
+      <ReviewStepper step={step} />
       <FlatList
         ref={list}
         data={items}
@@ -579,7 +563,7 @@ export default function TailoringReviewScreen() {
         contentContainerClassName="px-6 pb-5"
         keyboardShouldPersistTaps="handled"
         ListFooterComponent={
-          run.step === 0 && options.applied.length > 0 ? (
+          step === 0 && options.applied.length > 0 ? (
             <View className="flex-row items-start gap-2 px-1 pb-2 pt-1">
               <LucideIcon name="Info" size={15} className="mt-0.5 text-muted-foreground" />
               <View className="flex-1 gap-1">
@@ -596,13 +580,13 @@ export default function TailoringReviewScreen() {
         ListHeaderComponent={
           <View className="mb-5 gap-5">
             <View className="gap-2">
-              <Text className="text-caption text-primary">Step {run.step + 1} of 3</Text>
+              <Text className="text-caption text-primary">Step {step + 1} of 2</Text>
               <Text accessibilityRole="header" className="text-h2 tracking-tight text-foreground">
-                {stepCopy[run.step].title}
+                {stepCopy[step].title}
               </Text>
-              {stepCopy[run.step].body ? (
+              {stepCopy[step].body ? (
                 <Text className="text-body leading-6 text-muted-foreground">
-                  {stepCopy[run.step].body}
+                  {stepCopy[step].body}
                 </Text>
               ) : null}
             </View>
@@ -657,63 +641,29 @@ export default function TailoringReviewScreen() {
                 )}
               </View>
             ) : null}
-            {run.step === 0 ? (
+            {step === 0 ? (
               <>
                 <AtsScoreCard review={review} />
               </>
             ) : null}
-            {run.step === 1 ? (
+            {step === 1 ? (
               <>
                 <KeywordDestinations review={review} resume={run.preview.preview.resume_preview} />
                 <ChangeSummaryCards summary={review.change_summary} />
               </>
             ) : null}
-            {run.step === 2 ? (
-              <>
-                <View className="gap-4 rounded-3xl border border-border bg-card p-4">
-                  <View className="flex-row gap-2">
-                    {[
-                      { label: "Job Match", value: score === null ? null : formatScore(score) },
-                      { label: "Changes Made", value: review.change_summary.total_changes },
-                      { label: "Keywords Applied", value: options.applied.length },
-                    ].map(({ label, value }) => (
-                      <View
-                        key={label}
-                        accessibilityLabel={`${label}: ${value ?? "unavailable"}`}
-                        className="min-w-0 flex-1 items-center gap-2 rounded-2xl bg-secondary/60 px-1 py-3"
-                      >
-                        <Text className="text-h2 tabular-nums text-foreground">{value ?? "—"}</Text>
-                        <Text className="text-caption text-center leading-4 text-muted-foreground">
-                          {label}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                  <View className="flex-row items-center justify-center gap-2 border-t border-border pt-3">
-                    <LucideIcon name="ShieldCheck" size={15} className="text-muted-foreground" />
-                    <Text className="text-caption flex-shrink leading-5 text-muted-foreground">
-                      Your original CV stays unchanged.
-                    </Text>
-                  </View>
-                </View>
-                {run.selectedKeywords.length ? (
-                  <View className="gap-2">
-                    <Text className="text-caption leading-5 text-muted-foreground">
-                      {run.selectedKeywords.length} selected keyword
-                      {run.selectedKeywords.length === 1 ? " hasn’t" : "s haven’t"} been applied.
-                      Saving will keep the current draft.
-                    </Text>
-                    <Button
-                      variant="outline"
-                      onPress={() => setStep(0)}
-                      disabled={busy}
-                      className="h-11 rounded-xl"
-                    >
-                      <Text>Review selected keywords</Text>
-                    </Button>
-                  </View>
-                ) : null}
-              </>
+            {step === 1 && pendingKeywordCount > 0 ? (
+              <View className="gap-2">
+                <ReviewNote message="Apply your selected keywords or deselect them before saving." />
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onPress={() => setStep(0)}
+                  className="h-11 rounded-xl"
+                >
+                  <Text>Review selected keywords</Text>
+                </Button>
+              </View>
             ) : null}
           </View>
         }
@@ -722,7 +672,7 @@ export default function TailoringReviewScreen() {
         className="gap-3 border-t border-border bg-background px-6 pt-4"
         style={{ paddingBottom: Math.max(insets.bottom, 12) }}
       >
-        {run.step === 0 ? (
+        {step === 0 ? (
           <>
             <Button
               onPress={run.applyKeywords}
@@ -763,35 +713,36 @@ export default function TailoringReviewScreen() {
             </View>
           </>
         ) : (
-          <View className="flex-row gap-3">
-            <Button
-              variant="outline"
-              onPress={() => setStep((run.step - 1) as ReviewStep)}
-              disabled={busy}
-              className="h-14 gap-1.5 rounded-2xl px-4"
-            >
-              <LucideIcon name="ChevronLeft" size={16} className="text-foreground" />
-              <Text>Back</Text>
-            </Button>
-            <Button
-              onPress={run.step === 1 ? () => setStep(2) : run.confirm}
-              disabled={run.step === 1 ? busy : blocked}
-              className="h-14 flex-1 gap-2 rounded-2xl"
-            >
-              {run.step === 2 ? (
-                run.reviewActivity === "confirm" ? (
+          <>
+            <Text className="text-caption text-center leading-5 text-muted-foreground">
+              We’ll save a separate copy for you to edit.
+            </Text>
+            <View className="flex-row gap-3">
+              <Button
+                variant="outline"
+                onPress={() => {
+                  if (!busy) setStep(0);
+                }}
+                disabled={busy}
+                className="h-14 gap-1.5 rounded-2xl px-4"
+              >
+                <LucideIcon name="ChevronLeft" size={16} className="text-foreground" />
+                <Text>Back</Text>
+              </Button>
+              <Button
+                onPress={() => {
+                  if (!blocked && pendingKeywordCount === 0) run.confirm();
+                }}
+                disabled={blocked || pendingKeywordCount > 0}
+                className="h-14 flex-1 gap-2 rounded-2xl"
+              >
+                {run.reviewActivity === "confirm" ? (
                   <ActivityIndicator size="small" color={theme.colors.primaryForeground} />
-                ) : null
-              ) : null}
-              <Text>
-                {run.step === 1
-                  ? "Continue"
-                  : run.reviewActivity === "confirm"
-                    ? "Saving…"
-                    : "Confirm & Save"}
-              </Text>
-            </Button>
-          </View>
+                ) : null}
+                <Text>{run.reviewActivity === "confirm" ? "Saving…" : "Continue to Edit CV"}</Text>
+              </Button>
+            </View>
+          </>
         )}
       </View>
     </AppScreen>

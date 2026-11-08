@@ -16,11 +16,11 @@ import { compareWords } from "@/lib/tailoring/diff";
 import { highlightAppliedKeywords, keywordDestinations } from "@/lib/tailoring/changes";
 import { readableLabel } from "@/components/tailoring/ReviewContent";
 
-const steps = ["Keywords", "Changes", "Save"];
+const steps = ["Keywords", "Changes"];
 export function ReviewStepper({ step }: { step: ReviewStep }) {
   return (
     <View
-      accessibilityLabel={`Step ${step + 1} of 3: ${steps[step]}`}
+      accessibilityLabel={`Step ${step + 1} of 2: ${steps[step]}`}
       className="flex-row items-center px-6 pb-5 pt-1"
     >
       {steps.map((label, index) => (

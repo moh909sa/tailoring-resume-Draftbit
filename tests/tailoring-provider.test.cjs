@@ -112,8 +112,38 @@ test('rejected keyword requests use error severity and keep both pending selecti
 });
 test('failed confirmation stays unsaved with explicit error severity and intact content',async()=>{
  const h=await preparePendingReview();for(const name of pendingNames){h.value().toggleKeyword(name,true);h.render();}
- h.value().setStep(2);h.render();const before=JSON.stringify(h.value().preview);let confirms=0;
+ h.value().setStep(1);h.render();const before=JSON.stringify(h.value().preview);let confirms=0;
  h.confirm=async()=>{confirms++;throw h.apiError('Save rejected',422);};
  h.value().confirm();h.render();await h.pump();
- assert.equal(confirms,1);assert.equal(h.value().saved,false);assert.equal(h.value().step,2);assert.equal(h.value().reviewProblem.severity,'error');assert.equal(JSON.stringify(h.value().preview),before);h.dispose();
+ assert.equal(confirms,1);assert.equal(h.value().saved,false);assert.equal(h.value().step,1);assert.equal(h.value().reviewProblem.severity,'error');assert.equal(JSON.stringify(h.value().preview),before);h.dispose();
+});
+
+test('legacy Save recovery returns to Changes without automatically confirming',async()=>{
+ const old=JSON.parse(reference(false));old.step=2;
+ const h=harness([['tailoring-review-v1:owner-a',JSON.stringify(old)]]);let confirms=0;h.confirm=async()=>{confirms++;};
+ await h.pump();assert.equal(h.value().step,1);assert.equal(h.value().saved,false);assert.equal(confirms,0);
+ await h.value().reloadReview();await h.pump();assert.equal(h.value().step,1);assert.equal(confirms,0);h.dispose();
+});
+test('rapid taps from Changes produce one preflight and one confirmed save',async()=>{
+ const h=await preparePendingReview();for(const name of pendingNames){h.value().toggleKeyword(name,true);h.render();}
+ h.value().setStep(1);h.render();let confirms=0,resolveSave;
+ h.confirm=async()=>{confirms++;return new Promise(resolve=>{resolveSave=resolve;});};
+ const reads=h.reads.length;
+ for(let n=0;n<8;n++)h.value().confirm();
+ h.render();await h.pump();
+ assert.equal(h.reads.length,reads+1);assert.equal(confirms,1);assert.equal(h.value().saved,false);assert.equal(h.value().reviewActivity,'confirm');
+ for(let n=0;n<8;n++)h.value().confirm();assert.equal(confirms,1);
+ const acknowledgement={tailoring_id:tailoringId,status:'ready',tailored_cv:{title:'Correct saved CV'}};
+ resolveSave(acknowledgement);await h.pump();
+ assert.equal(h.value().saved,true);assert.deepEqual(h.value().confirmation,acknowledgement);assert.equal(h.value().step,1);h.dispose();
+});
+test('a newer server draft replaces Changes and requires another tap before saving',async()=>{
+ const h=await preparePendingReview();for(const name of pendingNames){h.value().toggleKeyword(name,true);h.render();}
+ h.value().setStep(1);h.render();let confirms=0;
+ const latest=makeReview('preview-new',82);h.load=()=>latest;
+ h.confirm=async()=>{confirms++;return {tailoring_id:tailoringId,status:'ready',tailored_cv:{}};};
+ h.value().confirm();h.render();await h.pump();
+ assert.equal(confirms,0);assert.equal(h.value().saved,false);assert.equal(h.value().step,1);
+ assert.equal(h.value().preview.preview.preview_id,'preview-new');assert.equal(h.value().reviewProblem.kind,'conflict');
+ h.value().confirm();h.render();await h.pump();assert.equal(confirms,1);assert.equal(h.value().saved,true);h.dispose();
 });

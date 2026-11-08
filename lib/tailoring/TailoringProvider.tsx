@@ -177,7 +177,7 @@ function restoredSnapshot(
     saved: value.saved === true,
     lastPreviewId: typeof value.previewId === "string" ? value.previewId : null,
     input,
-    step: value.step === 1 || value.step === 2 ? value.step : 0,
+    step: value.step === 1 || value.step === 2 ? 1 : 0,
     selectedKeywords,
   };
 }
@@ -450,7 +450,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
           current.current.lastPreviewId &&
           current.current.lastPreviewId !== preview.preview.preview_id;
         acceptPreview(preview);
-        if (changed && current.current.step === 2)
+        if (changed && current.current.step === 1)
           update((state) => ({
             ...state,
             step: 1,
@@ -485,7 +485,7 @@ export function TailoringProvider({ children }: { children: ReactNode }) {
     (action: "keywords" | "confirm") => {
       const state = current.current;
       const draft = state.preview;
-      if (action === "confirm" && state.step !== 2) return;
+      if (action === "confirm" && state.step !== 1) return;
       if (
         !ownerId ||
         !draft ||

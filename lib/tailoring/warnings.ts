@@ -25,8 +25,8 @@ export function readableReviewWarning(message: string): string {
     : message;
 }
 
-// Grounding checks stay with the comparisons and final safety review. The
-// original backend warnings remain untouched in the draft.
+// Grounding checks stay with Changes comparisons. The original backend
+// warnings remain untouched in the draft.
 export function reviewWarningsForStep(warnings: string[], step: ReviewStep): string[] {
   return warnings
     .filter(
