@@ -267,7 +267,7 @@ async function nativeTransition() {
   if(!nativeStyles) nativeStyles=(async()=>{
     const postcss=require('postcss'),tailwind=require('tailwindcss');
     const config=require('../tailwind.config.js');
-    const css=await postcss([tailwind({...config,safelist:[],content:[{raw:'bg-card bg-muted bg-background bg-primary min-h-11 flex-1 items-center justify-center rounded-xl overflow-hidden gap-4 px-8',extension:'html'}]})]).process('@tailwind utilities;',{from:undefined});
+    const css=await postcss([tailwind({...config,safelist:[],content:[{raw:'bg-card bg-muted bg-background bg-primary border-primary border-transparent border-b-2 min-h-11 min-h-12 flex-1 items-center justify-center rounded-xl overflow-hidden gap-4 px-8',extension:'html'}]})]).process('@tailwind utilities;',{from:undefined});
     return require('react-native-css-interop/css-to-rn').cssToReactNativeRuntime(Buffer.from(css.css),{inlineRem:14}).rules;
   })();
   const rules=await nativeStyles;
@@ -302,6 +302,13 @@ test('saved editor can switch repeatedly between Edit CV and Job Match through n
   for(const label of ['Job Match','Edit CV','Job Match','Edit CV']){
     tabs().find(n=>text(n)===label).props.onPress();h.render();paint();
     if(label==='Job Match')assert.ok(h.find(n=>n.type==='JobMatch'));
+  }
+  const secondaryPaint=[await nativeTransition(),await nativeTransition()];
+  const secondaryLabels=['Resume Content','Design & Layout','Overview','Keyword Highlights'];
+  const paintSecondary=()=>nodes(h.render()).filter(n=>n.props.accessibilityRole==='tab'&&secondaryLabels.includes(n.props.accessibilityLabel)).forEach((node,index)=>assert.doesNotThrow(()=>secondaryPaint[index](node.props.className)));
+  paintSecondary();
+  for(const label of ['Design & Layout','Resume Content','Job Match','Keyword Highlights','Overview','Edit CV']){
+    h.find(n=>n.props.accessibilityRole==='tab'&&text(n)===label).props.onPress();h.render();paintSecondary();
   }
   assert.equal(updates,1);assert.deepEqual(editor.resume,document.resume);h.dispose();
 });
@@ -417,18 +424,21 @@ test('Job Match keeps engine precision, disclosure order and stale evidence boun
   const props={analysis:{status:'current',revision:6,score:{overall_score:72.4,sub_scores:{keyword_match:66.7,skills_coverage:89.3},recommendations:['Use accurate examples.']},matched_keywords:['Python','SQL'],missing_keywords:['React'],required_skills:['React'],preferred_skills:[],matched_count:2,total_keywords:3},revision:6,dirty:false,loading:false,jobDescription:'Full saved job description',confirmedSkills:['Python'],onRefresh:()=>updates++,onAddSkill:()=>{},onEdit:()=>{}};
   h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
   assert.match(h.getText(),/72\.4/);assert.match(h.getText(),/66\.7%/);assert.match(h.getText(),/2 of 3/);
-  const titles=['View Keyword Highlights','ATS Score Breakdown','Missing Keywords','Recommendations','About Job Match & Tips'];
+  const titles=['ATS Score Breakdown','Missing Keywords','Recommendations','About Job Match & Tips'];
   assert.deepEqual(nodes(h.render()).filter(n=>titles.includes(n.props.accessibilityLabel)).map(n=>n.props.accessibilityLabel),titles);
   assert.equal(h.find(n=>n.props.accessibilityLabel==='ATS Score Breakdown').props.accessibilityState.expanded,false);
   h.find(n=>n.props.accessibilityLabel==='ATS Score Breakdown').props.onPress();h.render();assert.match(h.getText(),/89\.3 \/ 100/);
-  h.find(n=>n.props.accessibilityLabel==='View Keyword Highlights').props.onPress();h.render();
+  props.section='highlights';h.render();
   assert.match(h.getText(),/Python · SQL/);assert.match(h.getText(),/Yellow: matched keywords/);assert.match(h.getText(),/Blue: keywords you added/);
   assert.equal(h.find(n=>n.type==='Text'&&n.props.className?.includes('text-tertiary')&&text(n).includes('Python')),undefined,'confirmed skill strings do not establish blue placement evidence');
-  props.dirty=true;h.render();assert.match(h.getText(),/Needs updating/);assert.doesNotMatch(h.getText(),/Python · SQL/);assert.match(h.getText(),/Update Match to verify/);
-  h.button('Save & Update Match').props.onPress();assert.equal(updates,1);
-  props.dirty=false;props.revision=7;h.render();assert.match(h.getText(),/Previous result for version 6/);assert.doesNotMatch(h.getText(),/Python · SQL/);
+  props.dirty=true;h.render();assert.doesNotMatch(h.getText(),/Python · SQL/);assert.match(h.getText(),/Update Match to verify/);
+  props.section='overview';h.render();assert.match(h.getText(),/Needs updating/);h.button('Save & Update Match').props.onPress();assert.equal(updates,1);
+  props.dirty=false;props.revision=7;h.render();assert.match(h.getText(),/Previous result for version 6/);
+  props.section='highlights';h.render();assert.doesNotMatch(h.getText(),/Python · SQL/);
   h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Description').props.onPress();h.render();assert.match(h.getText(),/Full saved job description/);
-  props.analysis=null;h.render();assert.match(h.getText(),/Not calculated/);assert.doesNotMatch(h.getText(),/72\.4/);h.dispose();
+  props.section='overview';h.render();props.section='highlights';h.render();
+  assert.equal(h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Description').props.accessibilityState.selected,true);
+  props.analysis=null;props.section='overview';h.render();assert.match(h.getText(),/Not calculated/);assert.doesNotMatch(h.getText(),/72\.4/);h.dispose();
 });
 
 test('Design & Layout reuses paper-size controls in Preview after a successful save',async()=>{
@@ -438,8 +448,8 @@ test('Design & Layout reuses paper-size controls in Preview after a successful s
   h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
   assert.equal(h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Edit CV').props.accessibilityState.selected,true);
   h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.onPress();h.render();
-  assert.ok(h.find(n=>n.type==='AppSheet'));assert.doesNotMatch(h.getText(),/Font size|Line spacing|Margins/);
-  h.button('Choose paper size in Preview').props.onPress();await h.pump();assert.deepEqual(h.calls,[]);
+  assert.equal(h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.accessibilityState.selected,true);assert.equal(h.find(n=>n.type==='AppSheet'),undefined);assert.doesNotMatch(h.getText(),/Font size|Line spacing|Margins/);
+  h.button('Choose paper size').props.onPress();await h.pump();assert.deepEqual(h.calls,[]);
   finish({...document,revision:7});await h.pump();assert.deepEqual(h.calls,[['back']]);h.dispose();
 });
 
@@ -454,4 +464,28 @@ test('Add Job saves a new role through the existing revision flow without changi
   const saved=await manager.flush();assert.equal(saved.revision,7);
   assert.deepEqual(saved.resume.workExperience[0],originalRole);assert.deepEqual(saved.resume.workExperience[1],newRole);
   assert.deepEqual(saved.resume.customSections,{notes:{text:'Keep this'}});manager.dispose();
+});
+
+test('four editor secondary tabs remember their main-tab selection without discarding a pending Summary save',async(t)=>{
+  const h=harness();t.after(()=>h.dispose());h.mocks['react-native'].Platform.OS='ios';h.params={id:TAILORED,returnTo:'preview',pageSize:'LETTER'};
+  let remote=makeDocument(),release,saves=0;
+  const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{saves++;await new Promise(resolve=>release=resolve);remote={...remote,revision:7,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
+  t.after(()=>manager.dispose());await manager.restore();
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,refreshAnalysis:()=>{},flush:()=>manager.flush(),updateResume:v=>manager.update(v)})}});
+  const tab=label=>h.find(n=>n.props.accessibilityRole==='tab'&&text(n)===label);
+  const select=label=>{tab(label).props.onPress();h.render();};
+  assert.equal(tab('Edit CV').props.accessibilityState.selected,true);assert.equal(tab('Resume Content').props.accessibilityState.selected,true);
+  h.find(n=>n.props.accessibilityLabel==='Edit Summary').props.onPress();h.render();
+  const section=h.find(n=>n.type==='SectionEditor');section.props.onChange('Pending complete Summary');section.props.onClose();await h.pump();
+  assert.equal(saves,1);assert.equal(manager.snapshot.saveState,'saving');
+  select('Design & Layout');assert.ok(h.button('Choose paper size'));assert.equal(h.find(n=>n.props.accessibilityLabel==='Edit Summary'),undefined);
+  select('Job Match');assert.equal(tab('Overview').props.accessibilityState.selected,true);assert.equal(h.find(n=>n.type==='JobMatch').props.section,'overview');
+  select('Keyword Highlights');assert.equal(h.find(n=>n.type==='JobMatch').props.section,'highlights');
+  select('Edit CV');assert.equal(tab('Design & Layout').props.accessibilityState.selected,true);
+  select('Resume Content');assert.ok(h.find(n=>n.props.accessibilityLabel==='Edit Summary'));assert.equal(manager.snapshot.resume.summary,'Pending complete Summary');
+  select('Job Match');assert.equal(tab('Keyword Highlights').props.accessibilityState.selected,true);
+  select('Overview');select('Edit CV');assert.equal(tab('Resume Content').props.accessibilityState.selected,true);
+  assert.equal(saves,1);assert.deepEqual(h.calls,[]);assert.equal(h.find(n=>n.type==='ScrollView').props.keyboardDismissMode,'interactive');
+  release();await h.pump();assert.equal(manager.snapshot.saveState,'saved');assert.equal(remote.resume.summary,'Pending complete Summary');
+  h.button('Preview PDF').props.onPress();await h.pump();assert.deepEqual(h.calls,[['back']]);
 });

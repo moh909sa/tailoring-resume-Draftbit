@@ -6,6 +6,7 @@ import Icon from "@/lib/icons/LucideIcon";
 import type { EditorAnalysis } from "@/lib/editor/types";
 
 export type JobMatchProps = {
+  section?: "overview" | "highlights";
   analysis: EditorAnalysis | null;
   revision: number;
   dirty: boolean;
@@ -24,7 +25,7 @@ const metricNames: Record<string, string> = {
   section_completeness: "Section completeness", sections: "Section completeness",
   date_consistency: "Date consistency", dates: "Date consistency",
 };
-export function JobMatch({ analysis, revision, dirty, loading, error, jobDescription, confirmedSkills, onRefresh, onAddSkill, onEdit }: JobMatchProps) {
+export function JobMatch({ section = "overview", analysis, revision, dirty, loading, error, jobDescription, confirmedSkills, onRefresh, onAddSkill, onEdit }: JobMatchProps) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [highlightView, setHighlightView] = useState<"resume" | "job">("resume");
   const current = !dirty && analysis?.status === "current" && analysis.revision === revision;
@@ -44,6 +45,7 @@ export function JobMatch({ analysis, revision, dirty, loading, error, jobDescrip
     </View>
   );
   return <View className="gap-4">
+    {section === "overview" ? <>
     <View className="gap-4 rounded-2xl border border-border bg-card p-5">
       <View className="flex-row items-center justify-between gap-3"><Text className="text-h4 text-foreground">Job Match</Text><Text className={current ? "text-caption text-success" : "text-caption text-muted-foreground"}>{current ? "Up to date" : score ? "Needs updating" : analysis?.status === "unavailable" ? "Unavailable" : "Not calculated"}</Text></View>
       <View className="gap-1"><Text className="text-caption text-muted-foreground">Overall score</Text><View className="flex-row items-end gap-2"><Text className="text-h1 text-foreground">{score ? score.overall_score : "—"}</Text><Text className="pb-1 text-body text-muted-foreground">/ 100</Text></View></View>
@@ -56,7 +58,9 @@ export function JobMatch({ analysis, revision, dirty, loading, error, jobDescrip
       <Button disabled={loading} onPress={onRefresh} className="rounded-xl">{loading ? <ActivityIndicator accessibilityLabel="Updating job match" /> : <Text>{dirty ? "Save & Update Match" : "Update Match"}</Text>}</Button>
       {error ? <Text accessibilityRole="alert" className="text-body text-destructive">{error}</Text> : null}
     </View>
-    {disclosure("highlights", "View Keyword Highlights", <>
+    </> : null}
+    {section === "highlights" ? <View className="gap-4 rounded-2xl border border-border bg-card p-5">
+      <Text accessibilityRole="header" className="text-h4 text-foreground">Keyword Highlights</Text>
       <View className="flex-row rounded-xl bg-muted p-1">{(["resume", "job"] as const).map(tab => <Pressable key={tab} accessibilityRole="tab" accessibilityState={{ selected: highlightView === tab }} onPress={() => setHighlightView(tab)} className={`min-h-11 flex-1 items-center justify-center rounded-lg ${highlightView === tab ? "bg-card" : "bg-muted"}`}><Text className={highlightView === tab ? "text-caption text-foreground" : "text-caption text-muted-foreground"}>{tab === "resume" ? "Your Resume" : "Job Description"}</Text></Pressable>)}</View>
       <View className="flex-row flex-wrap gap-3">
         <View className="flex-row items-center gap-2"><View className="h-3 w-3 rounded-sm bg-warning" /><Text className="text-caption text-foreground">Yellow: matched keywords</Text></View>
@@ -67,7 +71,8 @@ export function JobMatch({ analysis, revision, dirty, loading, error, jobDescrip
         <Text className="text-body font-semibold text-foreground">Matched keywords in your saved resume</Text>
         {!current ? <Text className="text-body leading-6 text-muted-foreground">Update Match to verify the keywords in your latest saved CV.</Text> : analysis?.matched_keywords.length ? <View className="rounded-xl bg-warning/15 p-3"><Text selectable className="text-body leading-7 text-foreground">{analysis.matched_keywords.join(" · ")}</Text></View> : <Text className="text-body text-muted-foreground">No matched keywords were reported.</Text>}
       </> : <><Text className="text-body font-semibold text-foreground">Job Description</Text><Text selectable className="text-body leading-6 text-muted-foreground">{jobDescription || "The job description is unavailable for this CV."}</Text></>}
-    </>)}
+    </View> : null}
+    {section === "overview" ? <>
     {disclosure("breakdown", "ATS Score Breakdown", <>
       {!current && score ? <Text className="text-caption text-muted-foreground">Previous analysis. Update Match to include your edits.</Text> : null}
       {score && Object.keys(score.sub_scores).length ? Object.entries(score.sub_scores).map(([key, value]) => <View key={key} className="flex-row items-center justify-between gap-4 py-1"><Text className="flex-1 text-body text-muted-foreground">{metricNames[key] ?? key.replace(/_/g, " ").replace(/^./, c => c.toUpperCase())}</Text><Text className="text-body text-foreground">{value === null ? "Not available" : `${value} / 100`}</Text></View>) : <Text className="text-body text-muted-foreground">Update Match to see the score breakdown.</Text>}
@@ -95,5 +100,6 @@ export function JobMatch({ analysis, revision, dirty, loading, error, jobDescrip
       <Text className="text-body leading-6 text-muted-foreground">Keep your experience accurate, describe specific achievements, and use relevant job wording where it fits. Save your edits and update the match to review the latest version.</Text>
       <Text className="text-body leading-6 text-muted-foreground">PDF readability is checked separately in Resume Preview.</Text>
     </>)}
+    </> : null}
   </View>;
 }

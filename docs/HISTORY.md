@@ -37,3 +37,5 @@ Resume Review uses Keywords → Changes; confirmation saves a separate copy dire
 Changes confirms and saves before opening PDF preview; Edit Resume returns after saving and refreshes the same document while retaining paper size.
 
 CV Editor keeps a fixed content navigation order and evidence-based Job Match disclosures; Design & Layout reuses Preview paper sizes, while unsupported formatting and inline keyword provenance remain backend-dependent.
+
+CV Editor uses persistent secondary navigation: Edit CV → Resume Content / Design & Layout and Job Match → Overview / Keyword Highlights, without replacing the autosave session.
