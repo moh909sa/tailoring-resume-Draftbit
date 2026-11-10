@@ -805,7 +805,7 @@ test("description list removes company headings, retaining paired bullets and wa
   button("Continue to Changes").props.onPress();
   assert.equal(run.step, 1);
   screen = render();
-  button("Continue to Edit CV").props.onPress();
+  button("Continue to CV").props.onPress();
   assert.equal(run.step, 1);
   assert.equal(run.confirmCalls, 1);
 });
@@ -1085,7 +1085,7 @@ test("Changes is step 2 of 2 and saves directly without the old repeated summary
   );
   assert.match(text(screen), /We’ll save a separate copy for you to edit\./);
   assert.ok(
-    nodes(screen).some((node) => node.type === "Button" && text(node) === "Continue to Edit CV"),
+    nodes(screen).some((node) => node.type === "Button" && text(node) === "Continue to CV"),
   );
   assert.equal(
     primitives.ReviewStepper({ step: 1 }).props.accessibilityLabel,
@@ -1110,7 +1110,7 @@ test("Changes preserves Back, explicit save, loading, errors, expiration and ack
   run.step = 1;
   screen = render();
   let confirm = nodes(screen).find(
-    (node) => node.type === "Button" && text(node) === "Continue to Edit CV",
+    (node) => node.type === "Button" && text(node) === "Continue to CV",
   );
   assert.equal(calls, 0);
   confirm.props.onPress();
@@ -1143,14 +1143,14 @@ test("Changes preserves Back, explicit save, loading, errors, expiration and ack
   run.preview.review.preview_expires_at = "2020-01-01T00:00:00Z";
   screen = render();
   confirm = nodes(screen).find(
-    (node) => node.type === "Button" && text(node) === "Continue to Edit CV",
+    (node) => node.type === "Button" && text(node) === "Continue to CV",
   );
   assert.equal(confirm.props.disabled, true);
   run.saved = true;
   assert.match(text(render()), /Your tailored CV is saved/);
 });
 
-test("only a saved acknowledgement opens the editor using its confirmed CV ID", () => {
+test("only a saved acknowledgement opens the PDF preview using its confirmed CV ID", () => {
   const { run, render, flushEffects, navigation } = screenHarness();
   run.step = 1;
   run.preview.review.preview_expires_at = null;
@@ -1171,7 +1171,7 @@ test("only a saved acknowledgement opens the editor using its confirmed CV ID", 
   render();
   flushEffects();
   assert.deepEqual(navigation, [
-    { pathname: "/cv-editor/[id]", params: { id: run.confirmation.tailoring_id } },
+    { pathname: "/cv-editor/[id]/preview", params: { id: run.confirmation.tailoring_id, returnTo: "library" } },
   ]);
 });
 
@@ -1370,12 +1370,12 @@ test("Changes omits Engine feedback while retaining complete underlying reports 
   );
   assert.ok(list.props.data.some((item) => item.kind === "warning"));
   const continueButton = nodes(screen).find(
-    (node) => node.type === "Button" && text(node) === "Continue to Edit CV",
+    (node) => node.type === "Button" && text(node) === "Continue to CV",
   );
   assert.equal(continueButton.props.disabled, false);
   continueButton.props.onPress();
   assert.equal(run.step, 1);
-  assert.match(text(render()), /Continue to Edit CV/);
+  assert.match(text(render()), /Continue to CV/);
   assert.equal(JSON.stringify(preview), before);
 });
 test("read-only resume marks hidden sections without dropping their contents", () => {

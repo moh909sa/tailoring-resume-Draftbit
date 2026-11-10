@@ -33,3 +33,5 @@ Tailor preparation is saved per account; identical inputs reopen existing result
 Editor tab and PDF state transitions retain a stable NativeWind variable-provider structure under the existing Expo Router navigator.
 
 Resume Review uses Keywords → Changes; confirmation saves a separate copy directly from Changes before opening the editor.
+
+Changes confirms and saves before opening PDF preview; Edit Resume returns after saving and refreshes the same document while retaining paper size.

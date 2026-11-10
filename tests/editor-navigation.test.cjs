@@ -48,7 +48,7 @@ function text(value) {
 function harness() {
   let cursor=0, tree, component, dirty=false;
   const slots=[],effects=[];
-  const h={params:{id:TAILORED},auth:{session:{user:{id:OWNER}},loading:false},calls:[],canGoBack:true};
+  const h={params:{id:TAILORED},auth:{session:{user:{id:OWNER}},loading:false},calls:[],canGoBack:true,focused:true};
   const changed=(a,b)=>!a||!b||a.length!==b.length||a.some((v,i)=>!Object.is(v,b[i]));
   const hooks={...React,
     useState(initial) {const i=cursor++;if(!slots[i])slots[i]={value:typeof initial==="function"?initial():initial};return [slots[i].value,next=>{slots[i].value=typeof next==="function"?next(slots[i].value):next;dirty=true;}];},
@@ -61,7 +61,7 @@ function harness() {
   const mocks={
     react:hooks,
     "react-native":{View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",Platform:{OS:"web"},Keyboard:{dismiss(){}},AppState:{addEventListener:()=>({remove(){}})}},
-    "expo-router":{router,useRouter:()=>router,useLocalSearchParams:()=>h.params,Stack:{Screen:"StackScreen"},useFocusEffect:fn=>hooks.useEffect(fn,[fn])},
+    "expo-router":{router,useRouter:()=>router,useLocalSearchParams:()=>h.params,Stack:{Screen:"StackScreen"},useFocusEffect:fn=>hooks.useEffect(()=>h.focused?fn():undefined,[fn,h.focused])},
     "react-native-safe-area-context":{SafeAreaView:"SafeAreaView",useSafeAreaInsets:()=>({top:0,bottom:0,left:0,right:0})},
     "@/lib/auth/AuthProvider":{useAuth:()=>h.auth},
     "@/theming/ThemeProvider":{useTheme:()=>({theme:{colors:{primary:"purple"}}})},
@@ -78,6 +78,8 @@ function harness() {
   h.find=predicate=>nodes(tree).find(predicate);
   h.button=label=>h.find(n=>n.type==="Button"&&text(n)===label);
   h.getText=()=>text(tree);
+  h.blur=()=>{h.focused=false;h.render();};
+  h.focus=()=>{h.focused=true;h.render();};
   h.dispose=()=>slots.forEach(slot=>slot.cleanup?.());
   h.mocks=mocks;
   return h;
@@ -134,7 +136,7 @@ test("PDF screen loads the saved tailoring revision, shares the exact artifact, 
   await h.pump();assert.equal(h.find(n=>n.type==="PdfViewer").props.uri,artifact.uri);
   assert.deepEqual(seen[0],[OWNER,TAILORED,7,"A4"]);
   h.button("Download PDF").props.onPress();await h.pump();assert.ok(seen.includes("shared"));
-  h.find(n=>n.props?.accessibilityLabel==="Back to CV editor").props.onPress();assert.deepEqual(h.calls.at(-1),["back"]);h.dispose();await tick();assert.ok(seen.includes("disposed"));
+  h.find(n=>n.props?.accessibilityLabel==="Back").props.onPress();assert.deepEqual(h.calls.at(-1),["back"]);h.dispose();await tick();assert.ok(seen.includes("disposed"));
 });
 test("missing/invalid PDF parameters show recovery instead of loading or issuing requests",async()=>{
   for(const params of [{},{id:"[id]"},{id:TAILORED,revision:"0"}]){
@@ -308,5 +310,79 @@ test('native PDF loading-to-document and paper-size transitions preserve context
   h.find(n=>n.props.accessibilityLabel==='Letter paper size').props.onPress();h.render();
   assert.doesNotThrow(()=>paint(loading().props.className));await h.pump();
   assert.doesNotThrow(()=>paint(document().props.className));assert.deepEqual(sizes,['A4','LETTER']);
-  h.find(n=>n.props.accessibilityLabel==='Back to CV editor').props.onPress();assert.deepEqual(h.calls.at(-1),['back']);h.dispose();
+  h.find(n=>n.props.accessibilityLabel==='Back').props.onPress();assert.deepEqual(h.calls.at(-1),['back']);h.dispose();
+});
+
+test('iOS preview downloads directly, then reloads edited saved content on return with the selected paper size',async(t)=>{
+  for(const size of ['A4','LETTER'])await t.test(size,async(t)=>{
+    const h=harness();t.after(()=>h.dispose());h.mocks['react-native'].Platform.OS='ios';
+    h.params={id:TAILORED,revision:'6'};
+    let remote=makeDocument(),release,signal;const loaded=[],shared=[],disposed=[];
+    h.open('app/cv-editor/[id]/preview.tsx',{
+      '@/lib/editor/api':{getEditorDocument:async()=>copy(remote)},
+      '@/lib/editor/pdf':{
+        loadEditorPdf:async(owner,id,revision,pageSize,abort)=>{
+          assert.equal(owner,OWNER);assert.equal(id,TAILORED);signal=abort;
+          if(revision===7)await new Promise(resolve=>release=resolve);
+          const artifact={uri:`file:///saved-${revision}-${pageSize}.pdf`,revision,pageCount:2,dispose:async()=>disposed.push(`${revision}-${pageSize}`)};
+          loaded.push({artifact,pageSize,summary:remote.resume.summary});return artifact;
+        },
+        shareEditorPdf:async pdf=>shared.push(pdf),
+      },
+    });
+    await h.pump();
+    if(size==='LETTER'){
+      h.find(n=>n.props.accessibilityLabel==='Letter paper size').props.onPress();await h.pump();
+    }
+    assert.match(h.getText(),/Engineer/);assert.match(h.getText(),/2 pages/);
+    h.button('Download PDF').props.onPress();await h.pump();
+    assert.equal(shared[0],loaded.at(-1).artifact);assert.equal(loaded.at(-1).pageSize,size);
+    h.button('Edit Resume').props.onPress();
+    assert.deepEqual(h.calls.at(-1),['push',{pathname:'/cv-editor/[id]',params:{id:TAILORED,returnTo:'preview',pageSize:size}}]);
+    h.blur();await h.pump();assert.equal(signal.aborted,true);
+    assert.equal(h.button('Download PDF').props.disabled,true);
+    remote={...remote,revision:7,resume:{...remote.resume,summary:'Updated saved content'}};
+    h.focus();await h.pump();assert.equal(h.button('Download PDF').props.disabled,true,'cannot download the old artifact during refresh');
+    release();await h.pump();
+    assert.equal(loaded.at(-1).pageSize,size);assert.equal(loaded.at(-1).summary,'Updated saved content');
+    assert.match(h.getText(),/Version 7/);
+    assert.equal(h.find(n=>n.type==='PdfViewer').props.uri,loaded.at(-1).artifact.uri);
+    h.button('Download PDF').props.onPress();await h.pump();
+    assert.equal(shared[1],loaded.at(-1).artifact);assert.equal(shared[1].revision,7);
+    assert.ok(disposed.includes(`6-${size}`));
+  });
+});
+
+test('editing from preview waits for saving before returning, retains recovery on failure, and avoids duplicate previews',async(t)=>{
+  for(const action of ['Back to PDF preview','Preview PDF'])await t.test(action,async(t)=>{
+    const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,returnTo:'preview',pageSize:'LETTER'};
+    const document=makeDocument();let finish;
+    const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:()=>new Promise(resolve=>finish=resolve)};
+    h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+    const press=()=>action==='Preview PDF'?h.button(action).props.onPress():h.find(n=>n.props.accessibilityLabel===action).props.onPress();
+    press();await h.pump();assert.deepEqual(h.calls,[]);
+    finish(null);await h.pump();assert.deepEqual(h.calls,[]);assert.match(h.find(n=>n.type==='Notice').props.message,/Save your latest changes/);
+    press();await h.pump();finish({...document,revision:7});await h.pump();
+    assert.deepEqual(h.calls,[['back']]);
+  });
+});
+
+test('preview refresh failures cannot download the previous saved artifact',async(t)=>{
+  const h=harness();t.after(()=>h.dispose());let fail=false;
+  h.open('app/cv-editor/[id]/preview.tsx',{
+    '@/lib/editor/api':{getEditorDocument:async()=>{if(fail)throw Error('Unable to refresh saved CV');return makeDocument();}},
+    '@/lib/editor/pdf':{loadEditorPdf:async()=>({uri:'file:///old.pdf',revision:6,dispose:async()=>{}})},
+  });
+  await h.pump();h.blur();fail=true;h.focus();await h.pump();
+  assert.match(h.getText(),/Unable to refresh/);assert.equal(h.button('Download PDF').props.disabled,true);
+  assert.equal(h.find(n=>n.type==='PdfViewer'),undefined);
+});
+
+test('returning editor without navigation history replaces itself with the saved Letter preview',async(t)=>{
+  const h=harness();t.after(()=>h.dispose());h.canGoBack=false;
+  h.params={id:TAILORED,returnTo:'preview',pageSize:'LETTER'};const document=makeDocument();
+  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>({...document,revision:8})};
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+  h.find(n=>n.props.accessibilityLabel==='Back to PDF preview').props.onPress();await h.pump();
+  assert.deepEqual(h.calls,[['replace',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'8',pageSize:'LETTER'}}]]);
 });

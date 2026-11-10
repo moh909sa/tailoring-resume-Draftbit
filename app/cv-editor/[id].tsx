@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
 const statusLabels = {saved:"All changes saved",saving:"Saving changes…",local:"Saved on this device · waiting to sync",error:"Changes need syncing",conflict:"Another saved version is available"};
 
 export default function CvEditorScreen() {
-  const {id} = useLocalSearchParams<{id?:string|string[]}>();
+  const {id,returnTo,pageSize} = useLocalSearchParams<{id?:string|string[];returnTo?:string;pageSize?:string}>();
+  const returningToPreview = returnTo === "preview";
   const {session} = useAuth();
   const editor = useCvEditor(id);
   const [showSignIn,setShowSignIn] = useState(false);
@@ -40,7 +41,10 @@ export default function CvEditorScreen() {
     initialMatch.current = document.tailoring_id;
     void editor.refreshAnalysis();
   }, [view, document, editor.analysis, editor.analysisLoading, editor.saveState, editor.refreshAnalysis]);
-  const leave = () => {previewGeneration.current++;Keyboard.dismiss();void editor.flush();router.replace("/(tabs)/library/tailored-cvs");};
+  const leave = () => {
+    if (returningToPreview && !editor.error && !editor.routeError) { void preview(); return; }
+    previewGeneration.current++;Keyboard.dismiss();void editor.flush();router.replace("/(tabs)/library/tailored-cvs");
+  };
   const openSection = (key:string) => {
     setView("edit");
     const found = sections.find(s=>key === "skills" ? /technicalSkills|professionalSkills|skills$/i.test(s.key) : key === "workExperience" ? /workExperience|experience$/.test(s.key) : s.key === key);
@@ -62,14 +66,18 @@ export default function CvEditorScreen() {
     try {
       const saved = await editor.flush();
       if (!mounted.current || generation !== previewGeneration.current) return;
-      if(saved) router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision)}});
+      if(saved) {
+        if (returningToPreview && router.canGoBack()) router.back();
+        else if (returningToPreview) router.replace({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),pageSize:pageSize === "LETTER" ? "LETTER" : "A4"}});
+        else router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision)}});
+      }
       else setActionError("Save your latest changes before opening the PDF preview. Your edits are kept on this device.");
     } catch(error) {if (mounted.current && generation === previewGeneration.current) setActionError(error instanceof Error ? error.message : "The CV could not be saved. Please try again.");}
     finally {if (mounted.current && generation === previewGeneration.current) setOpeningPreview(false);}
   };
   return <AppScreen>
     <View className="min-h-16 flex-row items-center gap-3 px-5 py-3">
-      <Button variant="ghost" size="icon" accessibilityLabel="Back to saved CVs" onPress={leave}><LucideIcon name="ChevronLeft" size={24} className="text-foreground"/></Button>
+      <Button variant="ghost" size="icon" accessibilityLabel={returningToPreview ? "Back to PDF preview" : "Back to saved CVs"} disabled={openingPreview} onPress={leave}><LucideIcon name="ChevronLeft" size={24} className="text-foreground"/></Button>
       <View className="flex-1"><Text accessibilityRole="header" className="text-h3 text-foreground">CV Editor</Text><Text numberOfLines={1} className="text-caption text-muted-foreground">{[document?.job.title,document?.job.company].filter(Boolean).join(" · ") || "Your tailored CV"}</Text></View>
     </View>
     {editor.loading ? <View className="flex-1 items-center justify-center gap-4"><ActivityIndicator/><Text className="text-body text-muted-foreground">Opening your saved CV…</Text></View>

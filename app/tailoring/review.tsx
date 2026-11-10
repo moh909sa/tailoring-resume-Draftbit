@@ -131,7 +131,7 @@ export default function TailoringReviewScreen() {
   useEffect(() => {
     const savedId = run.confirmation?.tailoring_id ?? run.tailoringId;
     if (routeMatches && run.saved && savedId)
-      router.replace({ pathname: "/cv-editor/[id]", params: { id: savedId } });
+      router.replace({ pathname: "/cv-editor/[id]/preview", params: { id: savedId, returnTo: "library" } });
   }, [run.saved, run.confirmation?.tailoring_id, run.preview?.tailoring_id]);
 
   function close() {
@@ -739,7 +739,7 @@ export default function TailoringReviewScreen() {
                 {run.reviewActivity === "confirm" ? (
                   <ActivityIndicator size="small" color={theme.colors.primaryForeground} />
                 ) : null}
-                <Text>{run.reviewActivity === "confirm" ? "Saving…" : "Continue to Edit CV"}</Text>
+                <Text>{run.reviewActivity === "confirm" ? "Saving…" : "Continue to CV"}</Text>
               </Button>
             </View>
           </>
