@@ -35,3 +35,5 @@ Editor tab and PDF state transitions retain a stable NativeWind variable-provide
 Resume Review uses Keywords → Changes; confirmation saves a separate copy directly from Changes before opening the editor.
 
 Changes confirms and saves before opening PDF preview; Edit Resume returns after saving and refreshes the same document while retaining paper size.
+
+CV Editor keeps a fixed content navigation order and evidence-based Job Match disclosures; Design & Layout reuses Preview paper sizes, while unsupported formatting and inline keyword provenance remain backend-dependent.

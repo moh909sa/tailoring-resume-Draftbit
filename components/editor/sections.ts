@@ -4,9 +4,9 @@ import { readableLabel } from "@/components/tailoring/ReviewContent";
 export type EditorSection = { key: string; label: string; value: JsonValue; hidden: boolean };
 export const editorMetadata = new Set(["id", "sectionMeta", "sectionType", "descriptionStyles", "condensed"]);
 const titles: Record<string, string> = {
-  personalInfo: "Contact details", personalInformation: "Contact details", summary: "Professional summary",
-  professionalSummary: "Professional summary", workExperience: "Experience", experience: "Experience",
-  education: "Education", personalProjects: "Projects", technicalSkills: "Skills", certificationsTraining: "Certifications & training",
+  personalInfo: "Personal Information", personalInformation: "Personal Information", summary: "Summary",
+  professionalSummary: "Summary", workExperience: "Experience", experience: "Experience",
+  education: "Education", personalProjects: "Projects", technicalSkills: "Skills", skills: "Skills", professionalSkills: "Skills", certificationsTraining: "Certifications & training",
 };
 
 export function plainText(value: string): string {
@@ -48,11 +48,13 @@ export function resumeSections(resume: JsonObject): EditorSection[] {
   }
   const meta = Array.isArray(resume.sectionMeta) ? resume.sectionMeta.filter(isJsonObject) : [];
   const ranks = ["personalInfo","personalInformation","summary","professionalSummary","workExperience","experience","education","technicalSkills","skills","professionalSkills","personalProjects"];
+  const contentOrder = (field: string) => /^(personalInfo|personalInformation)$/.test(field) ? 0 : /^(summary|professionalSummary)$/.test(field) ? 1 : /^(workExperience|experience)$/.test(field) ? 2 : field === "education" ? 3 : /^(technicalSkills|skills|professionalSkills)$/.test(field) ? 4 : 5;
   return fields.map((field) => {
     const metadata = meta.find((m) => m.key === field.field || m.key === field.key);
-    return { key:field.key, value:field.value, label:typeof metadata?.displayName === "string" ? metadata.displayName : titles[field.field] ?? readableLabel(field.field), hidden:metadata?.isVisible === false,
+    return { key:field.key, value:field.value, label:contentOrder(field.field) < 5 ? titles[field.field] : typeof metadata?.displayName === "string" ? metadata.displayName : titles[field.field] ?? readableLabel(field.field), hidden:metadata?.isVisible === false,
+      contentOrder: contentOrder(field.field),
       order: typeof metadata?.order === "number" ? metadata.order : 100 + (ranks.includes(field.field) ? ranks.indexOf(field.field) : ranks.length) };
-  }).sort((a,b) => a.key.startsWith("personalInfo") && !b.key.startsWith("personalInfo") ? -1 : b.key.startsWith("personalInfo") && !a.key.startsWith("personalInfo") ? 1 : a.order-b.order);
+  }).sort((a,b) => a.contentOrder-b.contentOrder || a.order-b.order);
 }
 
 export function replaceSection(resume: JsonObject, key: string, value: JsonValue): JsonObject {

@@ -71,8 +71,8 @@ function harness() {
     "@react-native-async-storage/async-storage":{__esModule:true,default:{getItem:async()=>null,setItem:async()=>{}}},
     "expo-crypto":{randomUUID:()=>"44444444-4444-4444-8444-444444444444"},
   };
-  for(const [file,name] of Object.entries({"components/layout/AppScreen":"AppScreen","components/layout/ScreenHeader":"ScreenHeader","components/library/LibrarySections":"LibrarySections","components/cv/AccountSheet":"AccountSheet","components/cv/Notice":"Notice","components/cv/DocumentEmptyState":"DocumentEmptyState","components/ui/button":"Button","components/ui/text":"Text","components/editor/SectionEditor":"SectionEditor","components/editor/JobMatch":"JobMatch","components/editor/PdfViewer":"PdfViewer","components/editor/PdfReadability":"PdfReadability"}))mocks["@/"+file]={[name]:name};
-  h.open=(file,extra={})=>{component=load(file,{...mocks,...extra}).default;h.render();};
+  for(const [file,name] of Object.entries({"components/layout/AppScreen":"AppScreen","components/layout/AppSheet":"AppSheet","components/layout/ScreenHeader":"ScreenHeader","components/library/LibrarySections":"LibrarySections","components/cv/AccountSheet":"AccountSheet","components/cv/Notice":"Notice","components/cv/DocumentEmptyState":"DocumentEmptyState","components/ui/button":"Button","components/ui/text":"Text","components/editor/SectionEditor":"SectionEditor","components/editor/JobMatch":"JobMatch","components/editor/PdfViewer":"PdfViewer","components/editor/PdfReadability":"PdfReadability"}))mocks["@/"+file]={[name]:name};
+  h.open=(file,extra={},exportName='default',props={})=>{const loaded=load(file,{...mocks,...extra})[exportName];component=()=>loaded(props);h.render();};
   h.render=()=>{cursor=0;dirty=false;tree=component();for(const effect of effects.splice(0))effect();return tree;};
   h.pump=async()=>{for(let i=0;i<8;i++){await tick();if(dirty)h.render();}};
   h.find=predicate=>nodes(tree).find(predicate);
@@ -120,7 +120,7 @@ test("editor waits for latest edit acknowledgement, previews its revision, and B
   await manager.restore();
   const h=harness();const api=()=>({...manager.snapshot,routeError:null,updateResume:v=>manager.update(v),updateConfirmedSkills:()=>{},flush:()=>manager.flush(),reload:()=>manager.refresh(),resolveConflict:mode=>manager.resolveConflict(mode),refreshAnalysis:()=>manager.refreshAnalysis()});
   h.open("app/cv-editor/[id].tsx",{"@/lib/editor/useCvEditor":{useCvEditor:api}});
-  h.find(n=>n.props?.accessibilityLabel==="Edit Professional summary").props.onPress();h.render();
+  h.find(n=>n.props?.accessibilityLabel==="Edit Summary").props.onPress();h.render();
   const section=h.find(n=>n.type==="SectionEditor");section.props.onChange("After editing");section.props.onClose();h.render();
   h.button("Preview PDF").props.onPress();await tick();assert.equal(h.calls.length,0,"must not navigate before PATCH acknowledgement");
   assert.equal(mutations[0].expected_revision,6);assert.equal(JSON.parse(stored).pending.mutation_id,mutations[0].mutation_id);
@@ -230,10 +230,9 @@ test('PDF Back returns to the originating screen for existing CVs and to Tailore
 
 test("Job Match does not turn role keywords into invented skills, and confirmed missing skills can be restored", () => {
   const h=harness();const added=[];
-  // Use this component's existing hook harness to retain its disclosure state.
-  h.mocks.react.useState = value => [value,()=>{}];
-  const component=load('components/editor/JobMatch.tsx',h.mocks).JobMatch;
-  const tree=component({analysis:{status:'current',revision:1,score:{overall_score:70,sub_scores:{},recommendations:[]},missing_keywords:['Senior engineer','Python'],matched_keywords:[],required_skills:['Python'],preferred_skills:[],total_keywords:2,matched_count:0},revision:1,dirty:false,loading:false,jobDescription:'Full job',confirmedSkills:['Python'],onAddSkill:skill=>added.push(skill),onRefresh:()=>{},onEdit:()=>{}});
+  const props={analysis:{status:'current',revision:1,score:{overall_score:70,sub_scores:{},recommendations:[]},missing_keywords:['Senior engineer','Python'],matched_keywords:[],required_skills:['Python'],preferred_skills:[],total_keywords:2,matched_count:0},revision:1,dirty:false,loading:false,jobDescription:'Full job',confirmedSkills:['Python'],onAddSkill:skill=>added.push(skill),onRefresh:()=>{},onEdit:()=>{}};
+  h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
+  h.find(n=>n.props.accessibilityLabel==='Missing Keywords').props.onPress();const tree=h.render();
   const buttons=nodes(tree).filter(n=>n.props.accessibilityLabel?.includes('add to Skills'));
   assert.equal(buttons.length,1);buttons[0].props.onPress();assert.deepEqual(added,['Python']);
   assert.match(text(tree),/Senior engineer/);assert.match(text(tree),/Job keyword/);
@@ -400,4 +399,59 @@ test('returning editor without navigation history replaces itself with the saved
   h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
   h.find(n=>n.props.accessibilityLabel==='Back to PDF preview').props.onPress();await h.pump();
   assert.deepEqual(h.calls,[['replace',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'8',pageSize:'LETTER'}}]]);
+});
+
+test('editor core sections have the agreed labels/order despite PDF metadata and preserve custom fields',()=>{
+  const {resumeSections,replaceSection,entryTemplate}=load('components/editor/sections.ts',{'@/components/tailoring/ReviewContent':{readableLabel:key=>key}});
+  const resume={...makeDocument().resume,customSections:{research:{sectionType:'text',text:'Keep research'}},sectionMeta:[{key:'summary',displayName:'Old summary label',order:99},{key:'workExperience',order:80},{key:'education',order:0}]};
+  const before=copy(resume),sections=resumeSections(resume);
+  assert.deepEqual(sections.slice(0,5).map(s=>s.label),['Personal Information','Summary','Experience','Education','Skills']);
+  assert.equal(sections.at(-1).key,'customSections.research');
+  const next=replaceSection(resume,'workExperience',[entryTemplate('workExperience')]);
+  assert.deepEqual(resume,before);assert.deepEqual(next.customSections,before.customSections);assert.deepEqual(next.sectionMeta,before.sectionMeta);
+  assert.ok(next.workExperience[0].id);assert.deepEqual(next.workExperience[0].description,[]);
+});
+
+test('Job Match keeps engine precision, disclosure order and stale evidence boundaries',()=>{
+  const h=harness();let updates=0;
+  const props={analysis:{status:'current',revision:6,score:{overall_score:72.4,sub_scores:{keyword_match:66.7,skills_coverage:89.3},recommendations:['Use accurate examples.']},matched_keywords:['Python','SQL'],missing_keywords:['React'],required_skills:['React'],preferred_skills:[],matched_count:2,total_keywords:3},revision:6,dirty:false,loading:false,jobDescription:'Full saved job description',confirmedSkills:['Python'],onRefresh:()=>updates++,onAddSkill:()=>{},onEdit:()=>{}};
+  h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
+  assert.match(h.getText(),/72\.4/);assert.match(h.getText(),/66\.7%/);assert.match(h.getText(),/2 of 3/);
+  const titles=['View Keyword Highlights','ATS Score Breakdown','Missing Keywords','Recommendations','About Job Match & Tips'];
+  assert.deepEqual(nodes(h.render()).filter(n=>titles.includes(n.props.accessibilityLabel)).map(n=>n.props.accessibilityLabel),titles);
+  assert.equal(h.find(n=>n.props.accessibilityLabel==='ATS Score Breakdown').props.accessibilityState.expanded,false);
+  h.find(n=>n.props.accessibilityLabel==='ATS Score Breakdown').props.onPress();h.render();assert.match(h.getText(),/89\.3 \/ 100/);
+  h.find(n=>n.props.accessibilityLabel==='View Keyword Highlights').props.onPress();h.render();
+  assert.match(h.getText(),/Python · SQL/);assert.match(h.getText(),/Yellow: matched keywords/);assert.match(h.getText(),/Blue: keywords you added/);
+  assert.equal(h.find(n=>n.type==='Text'&&n.props.className?.includes('text-tertiary')&&text(n).includes('Python')),undefined,'confirmed skill strings do not establish blue placement evidence');
+  props.dirty=true;h.render();assert.match(h.getText(),/Needs updating/);assert.doesNotMatch(h.getText(),/Python · SQL/);assert.match(h.getText(),/Update Match to verify/);
+  h.button('Save & Update Match').props.onPress();assert.equal(updates,1);
+  props.dirty=false;props.revision=7;h.render();assert.match(h.getText(),/Previous result for version 6/);assert.doesNotMatch(h.getText(),/Python · SQL/);
+  h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Description').props.onPress();h.render();assert.match(h.getText(),/Full saved job description/);
+  props.analysis=null;h.render();assert.match(h.getText(),/Not calculated/);assert.doesNotMatch(h.getText(),/72\.4/);h.dispose();
+});
+
+test('Design & Layout reuses paper-size controls in Preview after a successful save',async()=>{
+  const h=harness(),document=makeDocument();let finish;
+  h.params={id:TAILORED,returnTo:'preview',pageSize:'LETTER'};
+  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:()=>new Promise(resolve=>finish=resolve)};
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+  assert.equal(h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Edit CV').props.accessibilityState.selected,true);
+  h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.onPress();h.render();
+  assert.ok(h.find(n=>n.type==='AppSheet'));assert.doesNotMatch(h.getText(),/Font size|Line spacing|Margins/);
+  h.button('Choose paper size in Preview').props.onPress();await h.pump();assert.deepEqual(h.calls,[]);
+  finish({...document,revision:7});await h.pump();assert.deepEqual(h.calls,[['back']]);h.dispose();
+});
+
+test('Add Job saves a new role through the existing revision flow without changing existing role bullets',async()=>{
+  const {entryTemplate,replaceSection}=load('components/editor/sections.ts',{'@/components/tailoring/ReviewContent':{readableLabel:key=>key}});
+  const originalRole={id:3,title:'Engineer',company:'Original company',years:'2020–2024',description:['<b>Existing</b> complete bullet'],descriptionStyles:['plain']};
+  let remote={...makeDocument(),resume:{...makeDocument().resume,workExperience:[originalRole],customSections:{notes:{text:'Keep this'}}}};
+  const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{assert.equal(body.expected_revision,6);remote={...remote,revision:7,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
+  await manager.restore();
+  const newRole={...entryTemplate('workExperience'),title:'Senior Engineer',company:'New company',description:['An accurate new bullet']};
+  manager.update(replaceSection(manager.snapshot.resume,'workExperience',[...manager.snapshot.resume.workExperience,newRole]));
+  const saved=await manager.flush();assert.equal(saved.revision,7);
+  assert.deepEqual(saved.resume.workExperience[0],originalRole);assert.deepEqual(saved.resume.workExperience[1],newRole);
+  assert.deepEqual(saved.resume.customSections,{notes:{text:'Keep this'}});manager.dispose();
 });

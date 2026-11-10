@@ -3,6 +3,7 @@ import { ActivityIndicator, Keyboard, Pressable, ScrollView, View } from "react-
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppScreen } from "@/components/layout/AppScreen";
+import { AppSheet } from "@/components/layout/AppSheet";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/cv/Notice";
@@ -26,11 +27,12 @@ export default function CvEditorScreen() {
   const [showSignIn,setShowSignIn] = useState(false);
   const [view,setView] = useState<"edit"|"match">("edit");
   const [activeKey,setActiveKey] = useState<string|null>(null);
+  const [showDesign,setShowDesign] = useState(false);
   const [openingPreview,setOpeningPreview] = useState(false);
   const [actionError,setActionError] = useState<string|null>(null);
   const previewGeneration = useRef(0);
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; setOpeningPreview(false); setActionError(null); setActiveKey(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
+  useEffect(() => { mounted.current = true; setView("edit"); setShowDesign(false); setOpeningPreview(false); setActionError(null); setActiveKey(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
   const insets = useSafeAreaInsets();
   const sections = editor.resume ? resumeSections(editor.resume) : [];
   const section = sections.find(s=>s.key === activeKey);
@@ -98,14 +100,16 @@ export default function CvEditorScreen() {
         {editor.saveState === "conflict" ? <View className="gap-3 rounded-2xl border border-border bg-card p-4"><Text className="text-body text-foreground">Choose which version to continue with. Your edits stay on this device until you decide.</Text><Button onPress={()=>void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" onPress={()=>void editor.resolveConflict("server")}><Text>Use the saved version</Text></Button></View> : null}
         {view === "edit" ? <View className="gap-5">
           <View className="gap-1"><Text className="text-h4 text-foreground">Make it yours</Text><Text className="text-body leading-6 text-muted-foreground">Refine your experience and highlight the skills you have. Changes save automatically.</Text></View>
-          <View className="overflow-hidden rounded-2xl border border-border bg-card">{sections.map((s,index)=><Pressable accessibilityRole="button" accessibilityLabel={`Edit ${s.label}`} key={s.key} onPress={()=>setActiveKey(s.key)} className={cn("min-h-24 flex-row items-center gap-4 px-5 py-4 active:bg-muted",index > 0 && "border-t border-border")}>
+          <View className="overflow-hidden rounded-2xl border border-border bg-card">{sections.map((s,index)=><Pressable accessibilityRole="button" accessibilityLabel={`Edit ${s.label}`} key={s.key} onPress={()=>setActiveKey(s.key)} className={cn("min-h-20 flex-row items-center gap-4 px-5 py-4 active:bg-muted",index > 0 && "border-t border-border")}>
             <View className="flex-1 gap-1.5"><Text className="text-body font-semibold text-foreground">{s.label}</Text><Text numberOfLines={2} className="text-caption leading-5 text-muted-foreground">{s.hidden ? "Hidden in PDF · " : ""}{sectionSummary(s.value)}</Text></View><LucideIcon name="ChevronRight" size={18} className="text-muted-foreground"/>
           </Pressable>)}</View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Design & Layout" onPress={()=>setShowDesign(true)} className="min-h-20 flex-row items-center gap-4 rounded-2xl border border-border bg-card px-5 py-4 active:bg-muted"><LucideIcon name="LayoutTemplate" size={20} className="text-primary"/><View className="flex-1 gap-1"><Text className="text-body font-semibold text-foreground">Design & Layout</Text><Text className="text-caption text-muted-foreground">Paper size: A4 or Letter</Text></View><LucideIcon name="ChevronRight" size={18} className="text-muted-foreground"/></Pressable>
           <View className="flex-row items-center gap-2"><LucideIcon name="ShieldCheck" size={16} className="text-muted-foreground"/><Text className="flex-1 text-caption leading-5 text-muted-foreground">Your original CV stays unchanged.</Text></View>
         </View> : <JobMatch analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={()=>void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection}/>}
       </ScrollView>
       <View className="gap-2 border-t border-border bg-background px-6 pt-4" style={{paddingBottom:Math.max(insets.bottom,16)}}><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="min-h-14 flex-row gap-2 rounded-2xl">{openingPreview ? <ActivityIndicator/> : <LucideIcon name="FileText" size={20} className="text-primary-foreground"/>}<Text>{openingPreview ? "Saving your CV…" : "Preview PDF"}</Text></Button></View>
       {section ? <SectionEditor key={section.key} section={section} saveLabel={statusLabels[editor.saveState]} onChange={(value:JsonValue)=>{if(editor.resume) editor.updateResume(replaceSection(editor.resume,section.key,value));}} onClose={()=>{setActiveKey(null);void editor.flush();}}/> : null}
+      {showDesign ? <AppSheet visible onClose={()=>setShowDesign(false)}><View className="flex-row items-center justify-between gap-3 border-b border-border px-5 py-4"><Text accessibilityRole="header" className="text-h4 text-foreground">Design & Layout</Text><Button variant="ghost" onPress={()=>setShowDesign(false)}><Text>Done</Text></Button></View><View className="gap-5 px-5 py-6"><View className="gap-2"><Text className="text-h5 text-foreground">Paper size</Text><Text className="text-body leading-6 text-muted-foreground">Choose A4 or Letter in Resume Preview. Your selection applies to the PDF you view and download.</Text></View><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="rounded-xl"><Text>{openingPreview ? "Saving your CV…" : "Choose paper size in Preview"}</Text></Button>{actionError || editor.problem ? <Notice tone="error" message={actionError ?? editor.problem ?? "Your changes need saving."}/> : null}</View></AppSheet> : null}
     </>}
     <AccountSheet visible={showSignIn} onClose={()=>{setShowSignIn(false);void editor.reload();}}/>
   </AppScreen>;

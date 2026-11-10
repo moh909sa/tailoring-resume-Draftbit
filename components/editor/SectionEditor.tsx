@@ -68,7 +68,7 @@ function ListEditor({ value, onChange, field, styles }: {
       const next = objects ? entryTemplate(field) : "";
       onChange([...value,next], styles ? [...styles,"bullet"] : undefined);
       if (objects) setActive(value.length);
-    }}><LucideIcon name="Plus" size={18} className="text-primary"/><Text className="text-body text-primary">{objects ? "Add entry" : /description/i.test(field) ? "Add bullet" : "Add item"}</Text></Button>
+    }}><LucideIcon name="Plus" size={18} className="text-primary"/><Text className="text-body text-primary">{objects ? /experience/i.test(field) ? "Add Job" : "Add entry" : /description/i.test(field) ? "Add bullet" : "Add item"}</Text></Button>
   </View>;
 }
 
