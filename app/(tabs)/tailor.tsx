@@ -51,7 +51,7 @@ export default function TailorScreen() {
   const existing = !!ownerId && !!tailoring.tailoringId && tailoring.status === "success" && tailoring.input?.resumeId === selectedId && tailoring.input?.jobDescription === description.trim();
   function startTailoring() {
     if (existing && tailoring.tailoringId) {
-      router.push(tailoring.saved ? { pathname: "/cv-editor/[id]", params: { id: tailoring.tailoringId } } : { pathname: "/tailoring/review", params: { tailoringId: tailoring.tailoringId } });
+      router.push(tailoring.saved ? { pathname: "/cv-editor/[id]/preview", params: { id: tailoring.tailoringId } } : { pathname: "/tailoring/review", params: { tailoringId: tailoring.tailoringId } });
       return;
     }
     if (tailoring.status === "running") {

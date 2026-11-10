@@ -103,15 +103,16 @@ test("signed-in editor hook with no/invalid ID stops loading and never requests 
     assert.equal(result.loading,false);assert.match(result.error,/saved CV|invalid/);assert.equal(reads,0);h.dispose();
   }
 });
-test("library sign-in action remains local and opening a saved CV uses tailoring ID, not source/engine ID",async()=>{
-  const h=harness();h.auth={session:null,loading:false};
+test("library opens PDF first using the saved tailoring ID and labels cards Open",async()=>{
+  const h=harness();h.mocks['react-native'].Platform.OS='ios';h.auth={session:null,loading:false};
   h.open("app/(tabs)/library/tailored-cvs.tsx",{"@/lib/editor/api":{listTailoredCvs:async(owner)=>{assert.equal(owner,OWNER);return [{id:TAILORED,source_resume_id:SOURCE,engine_resume_id:ENGINE,status:"ready",job_title:"Engineer",company:null,created_at:"2026-11-01",updated_at:"2026-11-01"}];}}});
   const empty=h.find(n=>n.type==="FlatList").props.ListEmptyComponent;
   empty.props.action.props.onPress();h.render();assert.equal(h.find(n=>n.type==="AccountSheet").props.visible,true);
   h.auth={session:{user:{id:OWNER}},loading:false};h.render();await h.pump();
   const list=h.find(n=>n.type==="FlatList");assert.equal(list.props.data.length,1);
   list.props.renderItem({item:list.props.data[0]}).props.onPress();
-  assert.deepEqual(h.calls.at(-1),["push",{pathname:"/cv-editor/[id]",params:{id:TAILORED}}]);h.dispose();
+  assert.equal(list.props.renderItem({item:list.props.data[0]}).props.accessibilityLabel,"Open Engineer");
+  assert.deepEqual(h.calls.at(-1),["push",{pathname:"/cv-editor/[id]/preview",params:{id:TAILORED}}]);h.dispose();
 });
 test("editor waits for latest edit acknowledgement, previews its revision, and Back returns to saved library",async()=>{
   let remote=makeDocument(),release,stored=null;const mutations=[];
@@ -194,9 +195,9 @@ test("web PDF transport pins revision, validates response, and download uses the
 });
 
 
-test("Tailor reopens the same review or saved CV without starting another AI job", async () => {
+test("Tailor opens saved CVs in PDF first and keeps unsaved Continue review without starting another AI job", async () => {
   for(const saved of [false,true]) {
-    const h=harness();let starts=0;
+    const h=harness();h.mocks['react-native'].Platform.OS='ios';let starts=0;
     const input={resumeId:SOURCE,filename:'Original.pdf',jobDescription:'Full exact job description. '.repeat(5).trim()};
     const run={input,tailoringId:TAILORED,status:'success',saved,hydrating:false,jobRecovering:false,jobConnectionError:null,start:()=>{starts++;return true;}};
     h.open('app/(tabs)/tailor.tsx',{
@@ -208,8 +209,22 @@ test("Tailor reopens the same review or saved CV without starting another AI job
     });
     h.button(saved?'Open saved CV':'Continue review').props.onPress();
     assert.equal(starts,0);
-    assert.deepEqual(h.calls.at(-1),['push',saved?{pathname:'/cv-editor/[id]',params:{id:TAILORED}}:{pathname:'/tailoring/review',params:{tailoringId:TAILORED}}]);h.dispose();
+    assert.deepEqual(h.calls.at(-1),['push',saved?{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED}}:{pathname:'/tailoring/review',params:{tailoringId:TAILORED}}]);h.dispose();
   }
+});
+
+test('PDF Back returns to the originating screen for existing CVs and to Tailored CVs after confirmation',async(t)=>{
+  for(const origin of ['Tailor','Library','Changes confirmation'])await t.test(origin,async(t)=>{
+    const h=harness();t.after(()=>h.dispose());h.mocks['react-native'].Platform.OS='ios';
+    h.params={id:TAILORED,...(origin==='Changes confirmation'?{returnTo:'library'}:{})};
+    h.open('app/cv-editor/[id]/preview.tsx',{
+      '@/lib/editor/api':{getEditorDocument:async()=>makeDocument()},
+      '@/lib/editor/pdf':{loadEditorPdf:async()=>({uri:'file:///saved.pdf',revision:6,dispose:async()=>{}})},
+    });
+    await h.pump();assert.ok(h.button('Edit Resume'));assert.equal(h.button('Download PDF').props.disabled,false);
+    h.find(n=>n.props.accessibilityLabel==='Back').props.onPress();
+    assert.deepEqual(h.calls,[origin==='Changes confirmation'?['replace','/(tabs)/library/tailored-cvs']:['back']]);
+  });
 });
 
 
