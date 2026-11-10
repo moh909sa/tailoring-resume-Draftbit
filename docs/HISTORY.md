@@ -39,3 +39,9 @@ Changes confirms and saves before opening PDF preview; Edit Resume returns after
 CV Editor keeps a fixed content navigation order and evidence-based Job Match disclosures; Design & Layout reuses Preview paper sizes, while unsupported formatting and inline keyword provenance remain backend-dependent.
 
 CV Editor uses persistent secondary navigation: Edit CV → Resume Content / Design & Layout and Job Match → Overview / Keyword Highlights, without replacing the autosave session.
+
+Resume Content uses a continuous inline form with growing text fields and open entry cards, reusing canonical autosave while preserving editor tabs and preview-first navigation.
+
+Resume Content restores section rows and original editors without the intro; previews, empty hints and captured scroll-offset restoration keep the list easy to resume.
+
+Section editor fields wrap and grow from saved text before focus; Summary stays roomy and iOS keyboard-aware scrolling keeps Done in a fixed header.

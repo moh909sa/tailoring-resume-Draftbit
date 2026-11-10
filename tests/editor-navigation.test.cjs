@@ -120,7 +120,7 @@ test("editor waits for latest edit acknowledgement, previews its revision, and B
   await manager.restore();
   const h=harness();const api=()=>({...manager.snapshot,routeError:null,updateResume:v=>manager.update(v),updateConfirmedSkills:()=>{},flush:()=>manager.flush(),reload:()=>manager.refresh(),resolveConflict:mode=>manager.resolveConflict(mode),refreshAnalysis:()=>manager.refreshAnalysis()});
   h.open("app/cv-editor/[id].tsx",{"@/lib/editor/useCvEditor":{useCvEditor:api}});
-  h.find(n=>n.props?.accessibilityLabel==="Edit Summary").props.onPress();h.render();
+  h.find(n=>n.props.accessibilityLabel==="Edit Summary").props.onPress();h.render();
   const section=h.find(n=>n.type==="SectionEditor");section.props.onChange("After editing");section.props.onClose();h.render();
   h.button("Preview PDF").props.onPress();await tick();assert.equal(h.calls.length,0,"must not navigate before PATCH acknowledgement");
   assert.equal(mutations[0].expected_revision,6);assert.equal(JSON.parse(stored).pending.mutation_id,mutations[0].mutation_id);
@@ -488,4 +488,109 @@ test('four editor secondary tabs remember their main-tab selection without disca
   assert.equal(saves,1);assert.deepEqual(h.calls,[]);assert.equal(h.find(n=>n.type==='ScrollView').props.keyboardDismissMode,'interactive');
   release();await h.pump();assert.equal(manager.snapshot.saveState,'saved');assert.equal(remote.resume.summary,'Pending complete Summary');
   h.button('Preview PDF').props.onPress();await h.pump();assert.deepEqual(h.calls,[['back']]);
+});
+
+test('Resume Content restores full tappable rows, ordered sections, two-line Summary and useful empty hints',()=>{
+  const h=harness(),document=makeDocument();document.resume.personalProjects=[];
+  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>document};
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+  assert.doesNotMatch(h.getText(),/Make it yours|Refine your experience|Changes save automatically/);
+  const rows=nodes(h.render()).filter(n=>n.props.accessibilityHint?.startsWith('Opens the '));
+  assert.deepEqual(rows.slice(0,5).map(n=>n.props.accessibilityLabel),['Edit Personal Information','Edit Summary','Edit Experience','Edit Education','Edit Skills']);
+  assert.ok(rows.every(n=>n.type==='Pressable'&&typeof n.props.onPress==='function'));
+  const summary=rows.find(n=>n.props.accessibilityLabel==='Edit Summary');
+  assert.ok(nodes(summary).some(n=>n.type==='Text'&&n.props.numberOfLines===2&&text(n)==='Before'));
+  assert.ok(nodes(summary).some(n=>n.type==='Icon'&&n.props.name==='ChevronRight'));
+  assert.match(h.getText(),/Add your first project/);
+  rows[0].props.onPress();h.render();assert.equal(h.find(n=>n.type==='SectionEditor').props.section.key,'personalInfo');h.dispose();
+});
+
+test('Personal Information and Summary open, save, and close at the original list offset before previewing latest edits',async(t)=>{
+  const h=harness();t.after(()=>h.dispose());let remote=makeDocument();const scrolls=[];
+  const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{remote={...remote,revision:remote.revision+1,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
+  t.after(()=>manager.dispose());await manager.restore();
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,flush:()=>manager.flush(),updateResume:v=>manager.update(v)})}});
+  h.find(n=>n.type==='ScrollView').props.ref.current={scrollTo:options=>scrolls.push(options)};
+  const changes=[['Personal Information','personalInfo',{name:'Updated Name',email:'new@example.com'}],['Summary','summary','Updated full Summary with all details.']];
+  for(const [label,key,value] of changes){
+    const offset=key==='summary'?240:120;
+    h.find(n=>n.type==='ScrollView').props.onScroll({nativeEvent:{contentOffset:{y:offset}}});
+    const prior=scrolls.length;
+    h.find(n=>n.props.accessibilityLabel==='Edit '+label).props.onPress();h.render();
+    assert.equal(scrolls.length,prior,'opening a modal must not reset the list');
+    let section=h.find(n=>n.type==='SectionEditor');assert.equal(section.props.section.key,key);
+    section.props.onChange(value);h.render();
+    section=h.find(n=>n.type==='SectionEditor');section.props.onClose();await h.pump();h.render();
+    assert.deepEqual(scrolls.at(-1),{y:offset,animated:false});assert.deepEqual(remote.resume[key],value);
+    h.find(n=>n.props.accessibilityLabel==='Edit '+label).props.onPress();h.render();
+    assert.deepEqual(h.find(n=>n.type==='SectionEditor').props.section.value,value);
+    h.find(n=>n.type==='SectionEditor').props.onClose();await h.pump();
+  }
+  h.button('Preview PDF').props.onPress();await h.pump();
+  assert.deepEqual(h.calls,[['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'8'}}]]);
+});
+
+test('Job Match edit actions use the restored section editors',()=>{
+  const h=harness(),document=makeDocument();
+  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>document,refreshAnalysis:()=>{}};
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+  h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Match').props.onPress();h.render();
+  h.find(n=>n.type==='JobMatch').props.onEdit('workExperience');h.render();
+  assert.equal(h.find(n=>n.type==='SectionEditor').props.section.key,'workExperience');h.dispose();
+});
+
+test('section fields size from saved text before focus and keep multiline input metrics aligned while values change',()=>{
+  const h=harness();const value='English (Professional Working Proficiency)';
+  const props={label:'Language',value,onChangeText:()=>{}};
+  h.open('components/editor/EditorTextField.tsx',{'@/components/ui/input':{Input:'Input'}},'EditorTextField',props);
+  const input=()=>h.find(n=>n.type==='Input');
+  assert.equal(input().props.multiline,true);assert.equal(input().props.scrollEnabled,false);assert.equal(input().props.numberOfLines,undefined);
+  assert.equal(input().props.value,value);assert.equal(input().props.textAlignVertical,'top');
+  assert.ok(h.find(n=>n.type==='Text'&&text(n)===value+'\u200b'));
+  assert.ok(h.find(n=>n.props.accessibilityElementsHidden===true&&n.props['aria-hidden']===true),'measurement copy must stay hidden from accessibility');
+  props.value='A longer company name with additional words\nand a final line\n';h.render();
+  assert.equal(input().props.value,props.value);assert.ok(h.find(n=>n.type==='Text'&&text(n)===props.value+'\u200b'));
+  props.roomy=true;h.render();
+  const mirror=h.find(n=>n.type==='Text'&&text(n)===props.value+'\u200b');assert.match(mirror.props.className,/min-h-40/);
+  for(const token of ['native:text-lg','native:leading-6','px-4','py-3']){assert.ok(input().props.className.includes(token));assert.ok(mirror.props.className.includes(token));}
+  h.dispose();
+});
+
+test('section header keeps Done outside keyboard-aware scrolling without double iOS padding',()=>{
+  const h=harness();h.mocks['react-native']={...h.mocks['react-native'],KeyboardAvoidingView:'KeyboardAvoidingView',Platform:{OS:'ios'}};
+  const section={key:'summary',label:'Summary',hidden:false,value:'A complete saved summary.'};let closes=0;
+  h.open('components/editor/SectionEditor.tsx',{'react-native':h.mocks['react-native']},'SectionEditor',{section,onChange:()=>{},onClose:()=>closes++,saveLabel:'All changes saved'});
+  const scroll=h.find(n=>n.type==='ScrollView');assert.equal(scroll.props.automaticallyAdjustKeyboardInsets,true);assert.equal(scroll.props.keyboardShouldPersistTaps,'handled');
+  assert.equal(h.find(n=>n.type==='KeyboardAvoidingView').props.enabled,false);
+  assert.equal(nodes(scroll).some(n=>n.type==='Button'&&text(n)==='Done'),false);h.button('Done').props.onPress();assert.equal(closes,1);h.dispose();
+});
+
+test('long saved Summary, company, languages and bullets retain full values through editing, Done, save and reopen',async(t)=>{
+  const {renderToStaticMarkup}=require('react-dom/server');const h=harness();t.after(()=>h.dispose());let fields=[],actions=[],saved;
+  const box=props=>React.createElement('div',null,props.children);
+  const {SectionEditor}=load('components/editor/SectionEditor.tsx',{
+    ...h.mocks,react:React,'react-native':{...h.mocks['react-native'],View:box,Pressable:box,KeyboardAvoidingView:box,ScrollView:box},
+    '@/components/layout/AppSheet':{AppSheet:box},'@/components/ui/text':{Text:props=>React.createElement('span',null,props.children)},
+    './EditorTextField':{EditorTextField:props=>{fields.push(props);return React.createElement('textarea',{value:props.value,readOnly:true});}},
+    '@/components/ui/button':{Button:props=>{actions.push(props);return React.createElement('button',null,props.children);}},'@/lib/icons/LucideIcon':{__esModule:true,default:()=>null},
+  });
+  const fullSummary='Complete first paragraph with every saved detail. '.repeat(12)+'\n\nFinal saved line remains editable.';
+  const language='English (Professional Working Proficiency)',company='International Health and Technology Partners';
+  let remote={...makeDocument(),resume:{...makeDocument().resume,summary:fullSummary,workExperience:[{id:1,title:'Engineer',company,years:'2021–Present',description:['A complete experience bullet with all original details.'],descriptionStyles:['plain']}],additional:{technicalSkills:['TypeScript'],languages:[language]}}};
+  const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{remote={...remote,revision:remote.revision+1,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
+  t.after(()=>manager.dispose());await manager.restore();
+  let kind='summary';
+  const paint=()=>{
+    fields=[];actions=[];const resume=manager.snapshot.resume;
+    const value=kind==='summary'?resume.summary:kind==='company'?resume.workExperience[0]:resume.additional.languages;
+    return renderToStaticMarkup(React.createElement(SectionEditor,{section:{key:kind==='summary'?'summary':kind==='company'?'workExperience':'additional.languages',label:kind,hidden:false,value},saveLabel:'Saving changes',onClose:()=>{saved=manager.flush();},onChange:next=>manager.update(kind==='summary'?{...resume,summary:next}:kind==='company'?{...resume,workExperience:[next]}:{...resume,additional:{...resume.additional,languages:next}})}));
+  };
+  paint();assert.equal(fields[0].value,fullSummary);assert.equal(fields[0].roomy,true);
+  fields[0].onChangeText(fullSummary+'\nPasted final paragraph.');paint();assert.ok(fields[0].value.endsWith('Pasted final paragraph.'));
+  kind='company';paint();const companyField=fields.find(f=>f.label.toLowerCase()==='company');assert.equal(companyField.value,company);companyField.onChangeText(company+' International');paint();
+  const bullet=fields.find(f=>f.label==='Bullet 1');assert.ok(bullet.value.includes('all original details'));bullet.onChangeText('An updated complete bullet with research & delivery evidence.');paint();
+  kind='languages';paint();assert.equal(fields[0].value,language);fields[0].onChangeText(language+' · fluent');paint();
+  actions.find(a=>text(a.children)==='Done').onPress();await saved;
+  assert.equal(remote.resume.workExperience[0].company,company+' International');assert.deepEqual(remote.resume.workExperience[0].descriptionStyles,['plain']);
+  await manager.refresh();kind='summary';paint();assert.equal(fields[0].value,fullSummary+'\nPasted final paragraph.');kind='company';paint();assert.ok(fields.some(f=>f.value===company+' International'));assert.ok(fields.some(f=>f.value==='An updated complete bullet with research & delivery evidence.'));kind='languages';paint();assert.equal(fields[0].value,language+' · fluent');
 });

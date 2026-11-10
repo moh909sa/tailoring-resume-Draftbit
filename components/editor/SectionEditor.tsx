@@ -2,8 +2,7 @@ import { useState } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Switch, View } from "react-native";
 import { AppSheet } from "@/components/layout/AppSheet";
 import { Text } from "@/components/ui/text";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { EditorTextField } from "./EditorTextField";
 import { Button } from "@/components/ui/button";
 import LucideIcon from "@/lib/icons/LucideIcon";
 import { isJsonObject, type JsonObject, type JsonValue } from "@/lib/tailoring/types";
@@ -11,16 +10,10 @@ import { readableLabel } from "@/components/tailoring/ReviewContent";
 import { editorMetadata, entryTemplate, plainText, sectionSummary, type EditorSection } from "./sections";
 
 function TextField({ label, value, onChange, field }: { label:string; value:string; onChange:(value:string)=>void; field:string }) {
-  const multiline = /summary|description|text|bullet/i.test(field) || value.length > 150;
   const formatted = /summary|description|text|bullet/i.test(field);
-  const Field = multiline ? Textarea : Input;
-  return <View className="gap-2">
-    <Text className="text-caption font-medium text-muted-foreground">{label}</Text>
-    <Field accessibilityLabel={label} value={formatted ? plainText(value) : value} onChangeText={(next)=>onChange(formatted ? next.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>") : next)} multiline={multiline}
-      className={multiline ? "min-h-32 rounded-xl bg-card px-4 py-3 text-body leading-6" : "h-12 rounded-xl bg-card px-4 text-body"}
+  return <EditorTextField label={label} value={formatted ? plainText(value) : value} onChangeText={(next)=>onChange(formatted ? next.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>") : next)} roomy={/summary/i.test(field)}
       keyboardType={/email/i.test(field) ? "email-address" : /phone/i.test(field) ? "phone-pad" : /website|linkedin|github|url/i.test(field) ? "url" : "default"}
       autoCapitalize={/email|website|linkedin|github|url/i.test(field) ? "none" : "sentences"} />
-  </View>;
 }
 
 function ListEditor({ value, onChange, field, styles }: {
@@ -52,9 +45,9 @@ function ListEditor({ value, onChange, field, styles }: {
     <ValueEditor value={value[active]} onChange={(next)=>update(active,next)} field={field}/>
   </View>;
   return <View className="gap-3">
-    {value.map((item,index) => <View key={index} className="gap-3 rounded-2xl border border-border bg-card p-4">
+    {value.map((item,index) => <View key={index} className="w-full min-w-0 gap-3 rounded-2xl border border-border bg-card p-4">
       {objects ? <Pressable accessibilityRole="button" onPress={()=>setActive(index)} className="min-h-11 flex-row items-center gap-3">
-        <View className="flex-1 gap-1"><Text className="text-body font-semibold text-foreground">{sectionSummary(item)}</Text><Text className="text-caption text-muted-foreground">Tap to edit entry</Text></View>
+        <View className="min-w-0 flex-1 gap-1"><Text className="text-body font-semibold text-foreground">{sectionSummary(item)}</Text><Text className="text-caption text-muted-foreground">Tap to edit entry</Text></View>
         <LucideIcon name="ChevronRight" size={18} className="text-muted-foreground"/>
       </Pressable> : <ValueEditor value={item} onChange={(next)=>update(index,next)} field={/description/i.test(field) ? "bullet" : field} label={/description/i.test(field) ? `Bullet ${index+1}` : `Item ${index+1}`}/>}
       <View className="flex-row items-center justify-end gap-2">
@@ -99,8 +92,8 @@ export function SectionEditor({section,onChange,onClose,saveLabel}: {
       <View className="flex-1 gap-1"><Text accessibilityRole="header" className="text-h4 text-foreground">{section.label}</Text><Text accessibilityLiveRegion="polite" className="text-caption text-muted-foreground">{saveLabel}</Text></View>
       <Button variant="ghost" onPress={()=>{Keyboard.dismiss();onClose();}}><Text className="text-primary">Done</Text></Button>
     </View>
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
-      <ScrollView className="flex-1" keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} contentContainerClassName="gap-6 px-5 pb-12 pt-6">
+    <KeyboardAvoidingView enabled={Platform.OS !== "ios"} behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
+      <ScrollView className="flex-1" automaticallyAdjustKeyboardInsets={Platform.OS === "ios"} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} contentContainerClassName="gap-6 px-5 pb-12 pt-6">
         {section.hidden ? <Text className="text-caption text-muted-foreground">This section is currently hidden in your PDF.</Text> : null}
         <ValueEditor value={section.value} onChange={onChange} field={section.key}/>
       </ScrollView>

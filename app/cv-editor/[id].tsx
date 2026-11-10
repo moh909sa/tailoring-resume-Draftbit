@@ -12,7 +12,7 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { useCvEditor } from "@/lib/editor/useCvEditor";
 import { SectionEditor } from "@/components/editor/SectionEditor";
 import { JobMatch } from "@/components/editor/JobMatch";
-import { replaceSection, resumeSections, sectionSummary } from "@/components/editor/sections";
+import { replaceSection, resumeSections, sectionPreview } from "@/components/editor/sections";
 import { isJsonObject, type JsonValue } from "@/lib/tailoring/types";
 import { cn } from "@/lib/utils";
 
@@ -33,8 +33,10 @@ export default function CvEditorScreen() {
   const previewGeneration = useRef(0);
   const mounted = useRef(true);
   const contentScroll = useRef<ScrollView|null>(null);
-  useEffect(() => { mounted.current = true; setView("edit"); setEditSection("Resume Content"); setMatchSection("Overview"); setOpeningPreview(false); setActionError(null); setActiveKey(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
-  useEffect(() => { contentScroll.current?.scrollTo({y:0,animated:false}); }, [view,editSection,matchSection]);
+  const listOffset = useRef(0);
+  const returnOffset = useRef(0);
+  useEffect(() => { mounted.current = true; listOffset.current=0; returnOffset.current=0; setActiveKey(null); setView("edit"); setEditSection("Resume Content"); setMatchSection("Overview"); setOpeningPreview(false); setActionError(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
+  useEffect(() => { listOffset.current=0;contentScroll.current?.scrollTo({y:0,animated:false}); }, [view,editSection,matchSection]);
   const secondaryTabs = view === "edit" ? ["Resume Content","Design & Layout"] as const : ["Overview","Keyword Highlights"] as const;
   const selectedSecondary = view === "edit" ? editSection : matchSection;
   const insets = useSafeAreaInsets();
@@ -52,10 +54,17 @@ export default function CvEditorScreen() {
     previewGeneration.current++;Keyboard.dismiss();void editor.flush();router.replace("/(tabs)/library/tailored-cvs");
   };
   const openSection = (key:string) => {
+    returnOffset.current=view === "edit" && editSection === "Resume Content" ? listOffset.current : 0;
     setView("edit");
     setEditSection("Resume Content");
     const found = sections.find(s=>key === "skills" ? /technicalSkills|professionalSkills|skills$/i.test(s.key) : key === "workExperience" ? /workExperience|experience$/.test(s.key) : s.key === key);
     if(found) setActiveKey(found.key);
+  };
+  const closeSection = () => {
+    Keyboard.dismiss();
+    setActiveKey(null);
+    contentScroll.current?.scrollTo({y:returnOffset.current,animated:false});
+    void editor.flush();
   };
   const addSkill = (skill:string) => {
     if(!editor.resume || !document) return;
@@ -103,22 +112,21 @@ export default function CvEditorScreen() {
           {secondaryTabs.map(tab=><Pressable key={tab} accessibilityRole="tab" accessibilityLabel={tab} accessibilityState={{selected:selectedSecondary === tab}} onPress={()=>{Keyboard.dismiss();if(tab === "Resume Content" || tab === "Design & Layout") setEditSection(tab);else setMatchSection(tab);}} className={cn("min-h-11 flex-1 items-center justify-center border-b-2 bg-background px-1 py-2",selectedSecondary === tab ? "border-primary" : "border-transparent")}><Text className={cn("text-caption text-center font-medium",selectedSecondary === tab ? "text-primary" : "text-muted-foreground")}>{tab}</Text></Pressable>)}
         </View>
       </View>
-      <ScrollView ref={contentScroll} className="flex-1" contentContainerClassName="gap-5 px-6 pb-8" keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}>
+      <ScrollView ref={contentScroll} className="flex-1" contentContainerClassName="gap-5 px-6 pb-8" keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} scrollEventThrottle={16} onScroll={event=>{if(view === "edit" && editSection === "Resume Content" && !activeKey) listOffset.current=Math.max(0,event.nativeEvent.contentOffset.y);}}>
         {editor.problem || actionError ? <View className="gap-3"><Notice tone="error" message={actionError ?? editor.problem ?? "Your edits need syncing."}/>{editor.saveState !== "conflict" ? <Button variant="outline" onPress={()=>{setActionError(null);void editor.flush();}}><Text>Retry saving</Text></Button> : null}</View> : null}
         {editor.saveState === "conflict" ? <View className="gap-3 rounded-2xl border border-border bg-card p-4"><Text className="text-body text-foreground">Choose which version to continue with. Your edits stay on this device until you decide.</Text><Button onPress={()=>void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" onPress={()=>void editor.resolveConflict("server")}><Text>Use the saved version</Text></Button></View> : null}
-        {view === "edit" && editSection === "Resume Content" ? <View className="gap-5">
-          <View className="gap-1"><Text className="text-h4 text-foreground">Make it yours</Text><Text className="text-body leading-6 text-muted-foreground">Refine your experience and highlight the skills you have. Changes save automatically.</Text></View>
-          <View className="overflow-hidden rounded-2xl border border-border bg-card">{sections.map((s,index)=><Pressable accessibilityRole="button" accessibilityLabel={`Edit ${s.label}`} key={s.key} onPress={()=>setActiveKey(s.key)} className={cn("min-h-20 flex-row items-center gap-4 px-5 py-4 active:bg-muted",index > 0 && "border-t border-border")}>
-            <View className="flex-1 gap-1.5"><Text className="text-body font-semibold text-foreground">{s.label}</Text><Text numberOfLines={2} className="text-caption leading-5 text-muted-foreground">{s.hidden ? "Hidden in PDF · " : ""}{sectionSummary(s.value)}</Text></View><LucideIcon name="ChevronRight" size={18} className="text-muted-foreground"/>
+        {view === "edit" && editSection === "Resume Content" ? <>
+          <View className="overflow-hidden rounded-2xl border border-border bg-card">{sections.map((section,index)=><Pressable key={section.key} accessibilityRole="button" accessibilityLabel={`Edit ${section.label}`} accessibilityHint={`Opens the ${section.label} editor`} onPress={()=>openSection(section.key)} className={cn("min-h-20 flex-row items-center gap-4 px-5 py-4 active:bg-muted",index > 0 && "border-t border-border")}>
+            <View className="flex-1 gap-1.5"><Text className="text-body font-semibold text-foreground">{section.label}</Text><Text numberOfLines={2} ellipsizeMode="tail" className="text-caption leading-5 text-muted-foreground">{section.hidden ? "Hidden in PDF · " : ""}{sectionPreview(section)}</Text></View><LucideIcon name="ChevronRight" size={18} className="text-muted-foreground"/>
           </Pressable>)}</View>
           <View className="flex-row items-center gap-2"><LucideIcon name="ShieldCheck" size={16} className="text-muted-foreground"/><Text className="flex-1 text-caption leading-5 text-muted-foreground">Your original CV stays unchanged.</Text></View>
-        </View> : null}
+        </> : null}
         {view === "edit" && editSection === "Design & Layout" ? <View className="gap-5"><View className="gap-2"><Text accessibilityRole="header" className="text-h4 text-foreground">Design & Layout</Text><Text className="text-body leading-6 text-muted-foreground">Choose how your saved resume appears on the page.</Text></View><View className="gap-4 rounded-2xl border border-border bg-card p-5"><Text className="text-h5 text-foreground">Paper size</Text><Text className="text-body leading-6 text-muted-foreground">Choose A4 or Letter in Resume Preview. Your selection applies to the PDF you view and download.</Text><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="rounded-xl"><Text>{openingPreview ? "Saving your CV…" : "Choose paper size"}</Text></Button></View></View> : null}
         {/* Keep evidence/disclosure selections mounted while the other main tab is open. */}
         <View className={cn("bg-background",view === "match" ? "gap-5" : "hidden")}><JobMatch section={matchSection === "Overview" ? "overview" : "highlights"} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={()=>void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection}/></View>
       </ScrollView>
       <View className="gap-2 border-t border-border bg-background px-6 pt-4" style={{paddingBottom:Math.max(insets.bottom,16)}}><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="min-h-14 flex-row gap-2 rounded-2xl">{openingPreview ? <ActivityIndicator/> : <LucideIcon name="FileText" size={20} className="text-primary-foreground"/>}<Text>{openingPreview ? "Saving your CV…" : "Preview PDF"}</Text></Button></View>
-      {section ? <SectionEditor key={section.key} section={section} saveLabel={statusLabels[editor.saveState]} onChange={(value:JsonValue)=>{if(editor.resume) editor.updateResume(replaceSection(editor.resume,section.key,value));}} onClose={()=>{setActiveKey(null);void editor.flush();}}/> : null}
+      {section ? <SectionEditor key={section.key} section={section} saveLabel={statusLabels[editor.saveState]} onChange={(value:JsonValue)=>{if(editor.resume) editor.updateResume(replaceSection(editor.resume,section.key,value));}} onClose={closeSection}/> : null}
     </>}
     <AccountSheet visible={showSignIn} onClose={()=>{setShowSignIn(false);void editor.reload();}}/>
   </AppScreen>;

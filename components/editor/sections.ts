@@ -32,6 +32,16 @@ export function sectionSummary(value: JsonValue): string {
   return "Add your details";
 }
 
+export function sectionPreview(section: EditorSection): string {
+  const key = section.key;
+  const noun = /project/i.test(key) ? "project" : /experience/i.test(key) ? "role" : /education/i.test(key) ? "education entry" : /skills/i.test(key) ? "skill" : "entry";
+  const hint = /personalInfo/i.test(key) ? "Add your contact details" : /summary/i.test(key) ? "Add a short summary" : `Add your first ${noun}`;
+  const value = isJsonObject(section.value) && Array.isArray(section.value.items) ? section.value.items : isJsonObject(section.value) && Array.isArray(section.value.strings) ? section.value.strings : section.value;
+  if (Array.isArray(value)) return value.length ? `${value.length} ${value.length === 1 ? noun : noun === "entry" ? "entries" : noun === "education entry" ? "education entries" : `${noun}s`}` : hint;
+  const preview = sectionSummary(value).replace(/\s+/g," ").trim();
+  return preview === "Add your details" || preview === "Add your first entry" ? hint : preview;
+}
+
 export function resumeSections(resume: JsonObject): EditorSection[] {
   const fields: { key: string; field: string; value: JsonValue }[] = [];
   for (const [key, value] of Object.entries(resume)) {
