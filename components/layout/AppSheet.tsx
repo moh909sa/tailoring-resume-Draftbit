@@ -8,10 +8,12 @@ export function AppSheet({
   visible,
   onClose,
   children,
+  onDismiss,
 }: {
   visible: boolean;
   onClose: () => void;
   children: ReactNode;
+  onDismiss?: () => void;
 }) {
   const { theme } = useTheme();
   return (
@@ -20,6 +22,7 @@ export function AppSheet({
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={onClose}
+      onDismiss={onDismiss}
     >
       <ThemeProvider key={theme.name} initialThemeName={theme.name} themes={[theme]}>
         <SafeAreaView className="flex-1 bg-background">

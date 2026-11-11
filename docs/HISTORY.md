@@ -45,3 +45,5 @@ Resume Content uses a continuous inline form with growing text fields and open e
 Resume Content restores section rows and original editors without the intro; previews, empty hints and captured scroll-offset restoration keep the list easy to resume.
 
 Section editor fields wrap and grow from saved text before focus; Summary stays roomy and iOS keyboard-aware scrolling keeps Done in a fixed header.
+
+- Resume Content shares engine section names/order with export, supports independent entry/custom-section copies, and limits rich-text tools to description fields the PDF renderer supports.

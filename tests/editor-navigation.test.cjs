@@ -60,7 +60,7 @@ function harness() {
   const router={push:href=>h.calls.push(["push",href]),replace:href=>h.calls.push(["replace",href]),back:()=>h.calls.push(["back"]),navigate:href=>h.calls.push(["navigate",href]),canGoBack:()=>h.canGoBack};
   const mocks={
     react:hooks,
-    "react-native":{View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",Platform:{OS:"web"},Keyboard:{dismiss(){}},AppState:{addEventListener:()=>({remove(){}})}},
+    "react-native":{View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",Platform:{OS:"web"},Keyboard:{dismiss(){},metrics:()=>undefined},useWindowDimensions:()=>({width:390,height:844}),AppState:{addEventListener:()=>({remove(){}})}},
     "expo-router":{router,useRouter:()=>router,useLocalSearchParams:()=>h.params,Stack:{Screen:"StackScreen"},useFocusEffect:fn=>hooks.useEffect(()=>h.focused?fn():undefined,[fn,h.focused])},
     "react-native-safe-area-context":{SafeAreaView:"SafeAreaView",useSafeAreaInsets:()=>({top:0,bottom:0,left:0,right:0})},
     "@/lib/auth/AuthProvider":{useAuth:()=>h.auth},
@@ -86,7 +86,7 @@ function harness() {
 }
 const routes=load("lib/editor/routes.ts");
 const {CvEditorSession}=load("lib/editor/session.ts");
-const makeDocument=()=>({tailoring_id:TAILORED,revision:6,updated_at:"2026-11-01T12:00:00Z",resume:{personalInfo:{name:"Test fixture"},summary:"Before",workExperience:[],education:[],additional:{technicalSkills:[]}},job:{title:"Engineer",company:null,description:"Isolated test job"},confirmed_skills:[],analysis:null});
+const makeDocument=()=>({tailoring_id:TAILORED,revision:6,updated_at:"2026-11-01T12:00:00Z",resume:{personalInfo:{name:"Test fixture"},summary:"Before",workExperience:[],education:[],additional:{technicalSkills:[]},sectionMeta:[['personalInfo','Personal Information','personalInfo'],['summary','Summary','text'],['workExperience','Experience','itemList'],['education','Education','itemList'],['additional','Skills','stringList']].map(([key,displayName,sectionType],order)=>({id:key,key,displayName,sectionType,isDefault:true,isVisible:true,order}))},job:{title:"Engineer",company:null,description:"Isolated test job"},confirmed_skills:[],analysis:null});
 
 test("route parameters require a single tailored UUID and optional positive saved revision",()=>{
   for(const id of [undefined,"","[id]","not-a-uuid",[TAILORED,SOURCE]])assert.ok(routes.readEditorRoute({id}).error);
@@ -408,11 +408,11 @@ test('returning editor without navigation history replaces itself with the saved
   assert.deepEqual(h.calls,[['replace',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'8',pageSize:'LETTER'}}]]);
 });
 
-test('editor core sections have the agreed labels/order despite PDF metadata and preserve custom fields',()=>{
+test('editor sections respect saved names/order while keeping Personal Information first and preserving custom fields',()=>{
   const {resumeSections,replaceSection,entryTemplate}=load('components/editor/sections.ts',{'@/components/tailoring/ReviewContent':{readableLabel:key=>key}});
   const resume={...makeDocument().resume,customSections:{research:{sectionType:'text',text:'Keep research'}},sectionMeta:[{key:'summary',displayName:'Old summary label',order:99},{key:'workExperience',order:80},{key:'education',order:0}]};
   const before=copy(resume),sections=resumeSections(resume);
-  assert.deepEqual(sections.slice(0,5).map(s=>s.label),['Personal Information','Summary','Experience','Education','Skills']);
+  assert.deepEqual(sections.slice(0,5).map(s=>s.label),['Personal Information','Education','Experience','Old summary label','Skills']);
   assert.equal(sections.at(-1).key,'customSections.research');
   const next=replaceSection(resume,'workExperience',[entryTemplate('workExperience')]);
   assert.deepEqual(resume,before);assert.deepEqual(next.customSections,before.customSections);assert.deepEqual(next.sectionMeta,before.sectionMeta);
@@ -499,7 +499,7 @@ test('Resume Content restores full tappable rows, ordered sections, two-line Sum
   assert.deepEqual(rows.slice(0,5).map(n=>n.props.accessibilityLabel),['Edit Personal Information','Edit Summary','Edit Experience','Edit Education','Edit Skills']);
   assert.ok(rows.every(n=>n.type==='Pressable'&&typeof n.props.onPress==='function'));
   const summary=rows.find(n=>n.props.accessibilityLabel==='Edit Summary');
-  assert.ok(nodes(summary).some(n=>n.type==='Text'&&n.props.numberOfLines===2&&text(n)==='Before'));
+  assert.ok(nodes(h.find(n=>n.props.accessibilityLabel==='Open Summary content')).some(n=>n.type==='Text'&&n.props.numberOfLines===2&&text(n)==='Before'));
   assert.ok(nodes(summary).some(n=>n.type==='Icon'&&n.props.name==='ChevronRight'));
   assert.match(h.getText(),/Add your first project/);
   rows[0].props.onPress();h.render();assert.equal(h.find(n=>n.type==='SectionEditor').props.section.key,'personalInfo');h.dispose();
@@ -558,8 +558,8 @@ test('section fields size from saved text before focus and keep multiline input 
 
 test('section header keeps Done outside keyboard-aware scrolling without double iOS padding',()=>{
   const h=harness();h.mocks['react-native']={...h.mocks['react-native'],KeyboardAvoidingView:'KeyboardAvoidingView',Platform:{OS:'ios'}};
-  const section={key:'summary',label:'Summary',hidden:false,value:'A complete saved summary.'};let closes=0;
-  h.open('components/editor/SectionEditor.tsx',{'react-native':h.mocks['react-native']},'SectionEditor',{section,onChange:()=>{},onClose:()=>closes++,saveLabel:'All changes saved'});
+  const section={key:'summary',label:'Summary',hidden:false,personal:false,custom:false,sectionType:'text',value:'A complete saved summary.'};let closes=0;
+  h.open('components/editor/SectionEditor.tsx',{'react-native':h.mocks['react-native']},'SectionEditor',{section,onChange:()=>{},onClose:()=>closes++,saveLabel:'All changes saved',onRename:()=>{},actions:{label:'Summary',canMoveUp:false,canMoveDown:true,onMove:()=>{}}});
   const scroll=h.find(n=>n.type==='ScrollView');assert.equal(scroll.props.automaticallyAdjustKeyboardInsets,true);assert.equal(scroll.props.keyboardShouldPersistTaps,'handled');
   assert.equal(h.find(n=>n.type==='KeyboardAvoidingView').props.enabled,false);
   assert.equal(nodes(scroll).some(n=>n.type==='Button'&&text(n)==='Done'),false);h.button('Done').props.onPress();assert.equal(closes,1);h.dispose();
@@ -572,6 +572,7 @@ test('long saved Summary, company, languages and bullets retain full values thro
     ...h.mocks,react:React,'react-native':{...h.mocks['react-native'],View:box,Pressable:box,KeyboardAvoidingView:box,ScrollView:box},
     '@/components/layout/AppSheet':{AppSheet:box},'@/components/ui/text':{Text:props=>React.createElement('span',null,props.children)},
     './EditorTextField':{EditorTextField:props=>{fields.push(props);return React.createElement('textarea',{value:props.value,readOnly:true});}},
+    './RichTextField':{RichTextField:props=>{fields.push(props);return React.createElement('textarea',{value:props.value,readOnly:true});}},
     '@/components/ui/button':{Button:props=>{actions.push(props);return React.createElement('button',null,props.children);}},'@/lib/icons/LucideIcon':{__esModule:true,default:()=>null},
   });
   const fullSummary='Complete first paragraph with every saved detail. '.repeat(12)+'\n\nFinal saved line remains editable.';
@@ -583,7 +584,7 @@ test('long saved Summary, company, languages and bullets retain full values thro
   const paint=()=>{
     fields=[];actions=[];const resume=manager.snapshot.resume;
     const value=kind==='summary'?resume.summary:kind==='company'?resume.workExperience[0]:resume.additional.languages;
-    return renderToStaticMarkup(React.createElement(SectionEditor,{section:{key:kind==='summary'?'summary':kind==='company'?'workExperience':'additional.languages',label:kind,hidden:false,value},saveLabel:'Saving changes',onClose:()=>{saved=manager.flush();},onChange:next=>manager.update(kind==='summary'?{...resume,summary:next}:kind==='company'?{...resume,workExperience:[next]}:{...resume,additional:{...resume.additional,languages:next}})}));
+    return renderToStaticMarkup(React.createElement(SectionEditor,{section:{key:kind==='summary'?'summary':kind==='company'?'workExperience':'additional.languages',label:kind,hidden:false,value},actions:{label:kind,canMoveUp:true,canMoveDown:true,onMove:()=>{}},onRename:()=>{},saveLabel:'Saving changes',onClose:()=>{saved=manager.flush();},onChange:next=>manager.update(kind==='summary'?{...resume,summary:next}:kind==='company'?{...resume,workExperience:[next]}:{...resume,additional:{...resume.additional,languages:next}})}));
   };
   paint();assert.equal(fields[0].value,fullSummary);assert.equal(fields[0].roomy,true);
   fields[0].onChangeText(fullSummary+'\nPasted final paragraph.');paint();assert.ok(fields[0].value.endsWith('Pasted final paragraph.'));
@@ -593,4 +594,37 @@ test('long saved Summary, company, languages and bullets retain full values thro
   actions.find(a=>text(a.children)==='Done').onPress();await saved;
   assert.equal(remote.resume.workExperience[0].company,company+' International');assert.deepEqual(remote.resume.workExperience[0].descriptionStyles,['plain']);
   await manager.refresh();kind='summary';paint();assert.equal(fields[0].value,fullSummary+'\nPasted final paragraph.');kind='company';paint();assert.ok(fields.some(f=>f.value===company+' International'));assert.ok(fields.some(f=>f.value==='An updated complete bullet with research & delivery evidence.'));kind='languages';paint();assert.equal(fields[0].value,language+' · fluent');
+});
+
+test('legacy CV preview saves complete display metadata before navigating to its acknowledged PDF revision',async(t)=>{
+  const h=harness();t.after(()=>h.dispose());let remote=makeDocument();delete remote.resume.sectionMeta;
+  const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{assert.ok(body.resume.sectionMeta.length);remote={...remote,revision:remote.revision+1,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
+  t.after(()=>manager.dispose());await manager.restore();
+  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,flush:()=>manager.flush(),updateResume:v=>manager.update(v)})}});
+  h.button('Preview PDF').props.onPress();await h.pump();
+  assert.deepEqual(h.calls,[['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7'}}]]);
+  assert.equal(remote.resume.sectionMeta.find(meta=>meta.key==='summary').displayName,'Summary');
+});
+
+test('iOS creation waits for sheet dismissal before opening each custom section; renamed headings and moved sections persist through Done',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());h.mocks['react-native']={...h.mocks['react-native'],Platform:{OS:'ios'}};
+ let remote=makeDocument(),mutation=0;
+ const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> `mutation-${++mutation}`,parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{remote={...remote,revision:remote.revision+1,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
+ t.after(()=>manager.dispose());await manager.restore();
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,flush:()=>manager.flush(),updateResume:v=>manager.update(v)})},'@/components/editor/SectionControls':{AddCustomSectionSheet:'AddCustomSectionSheet',RenameSectionSheet:'RenameSectionSheet',SectionActions:'SectionActions'}});
+ h.find(n=>n.props.accessibilityLabel==='Rename Summary').props.onPress();h.render();h.find(n=>n.type==='RenameSectionSheet').props.onSave('About Me');h.render();
+ h.find(n=>n.type==='SectionActions'&&n.props.label==='Experience').props.onMove(-1);h.render();
+ const {resumeSections}=load('components/editor/sections.ts',{'@/components/tailoring/ReviewContent':{readableLabel:key=>key}});
+ assert.deepEqual(resumeSections(manager.snapshot.resume).slice(0,3).map(s=>s.label),['Personal Information','Experience','About Me']);
+ for(const type of ['text','itemList','stringList']) {
+  h.button('Add Custom Section').props.onPress();h.render();
+  h.find(n=>n.type==='AddCustomSectionSheet').props.onCreate('My '+type,type);h.render();
+  assert.equal(h.find(n=>n.type==='SectionEditor'),undefined,'creation and editor modals cannot overlap on iOS');
+  const closing=h.find(n=>n.type==='AddCustomSectionSheet');assert.equal(closing.props.visible,false);closing.props.onDismiss();h.render();
+  const opened=h.find(n=>n.type==='SectionEditor');assert.equal(opened.props.section.label,'My '+type);assert.equal(opened.props.section.sectionType,type);assert.equal(opened.key,null);
+  opened.props.onClose();await h.pump();h.render();
+ }
+ await manager.refresh();h.render();
+ h.find(n=>n.props.accessibilityLabel==='Edit About Me').props.onPress();h.render();assert.equal(h.find(n=>n.type==='SectionEditor').props.section.key,'summary');assert.equal(h.find(n=>n.type==='SectionEditor').props.section.value,'Before');
+ assert.deepEqual(resumeSections(remote.resume).slice(0,3).map(s=>s.label),['Personal Information','Experience','About Me']);
 });
