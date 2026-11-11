@@ -1,9 +1,11 @@
+import type { EditorLayout } from "./layout";
 import type { EditorAnalysis, EditorDocument, EditorSave, JsonObject } from "./types";
 
 export type SaveState = "saved" | "saving" | "local" | "error" | "conflict";
 export type EditorState = {
   document: EditorDocument | null;
   resume: JsonObject | null;
+  layout: EditorLayout | null;
   confirmedSkills: string[];
   loading: boolean;
   error: string | null;
@@ -13,8 +15,8 @@ export type EditorState = {
   analysis: EditorAnalysis | null;
   analysisLoading: boolean;
 };
-export const emptyEditorState = (): EditorState => ({document: null, resume: null, confirmedSkills: [], loading: true, error: null, accessStatus: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false});
-type Backup = {version: 1; document: EditorDocument; resume: JsonObject; confirmedSkills: string[]; pending: EditorSave | null; dirty: boolean};
+export const emptyEditorState = (): EditorState => ({document: null, resume: null, layout: null, confirmedSkills: [], loading: true, error: null, accessStatus: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false});
+type Backup = {version: 1; document: EditorDocument; resume: JsonObject; layout?: EditorLayout | null; confirmedSkills: string[]; pending: EditorSave | null; dirty: boolean};
 type Dependencies = {
   read: () => Promise<string | null>;
   write: (raw: string) => Promise<unknown>;
@@ -54,9 +56,9 @@ export class CvEditorSession {
     if (!this.disposed) this.deps.onState(this.state);
   }
   private async persist() {
-    const {document, resume, confirmedSkills} = this.state;
+    const {document, resume, layout, confirmedSkills} = this.state;
     if (!document || !resume) return;
-    const raw = JSON.stringify({version: 1, document, resume, confirmedSkills, pending: this.pending, dirty: this.dirty} satisfies Backup);
+    const raw = JSON.stringify({version: 1, document, resume, layout, confirmedSkills, pending: this.pending, dirty: this.dirty} satisfies Backup);
     const write = this.writes.catch(() => undefined).then(() => this.deps.write(raw));
     this.writes = write;
     await write;
@@ -70,7 +72,7 @@ export class CvEditorSession {
   }
   private accept(doc: EditorDocument, keepDraft: boolean) {
     const analysis = keepDraft && doc.analysis ? {...doc.analysis, status: doc.analysis.score ? "stale" as const : "unavailable" as const} : doc.analysis;
-    this.change({document: doc, ...(keepDraft ? {} : {resume: doc.resume, confirmedSkills: doc.confirmed_skills}), analysis, loading: false, error: null, accessStatus: null});
+    this.change({document: doc, ...(keepDraft ? {} : {resume: doc.resume, confirmedSkills: doc.confirmed_skills}), ...(!keepDraft || this.state.layout === null ? {layout:doc.layout ?? null} : {}), analysis, loading: false, error: null, accessStatus: null});
   }
   async restore() {
     try {
@@ -79,15 +81,15 @@ export class CvEditorSession {
       if (raw) {
         const data = JSON.parse(raw) as Backup;
         const doc = this.deps.parseDocument(data.document);
-        const candidate = this.deps.parseDocument({...doc, resume: data.resume, confirmed_skills: data.confirmedSkills});
+        const candidate = this.deps.parseDocument({...doc, resume: data.resume, confirmed_skills: data.confirmedSkills, layout:data.layout ?? doc.layout});
         if (data.version === 1) {
           const dirty = data.dirty === true;
           const p = data.pending;
-          const pending = p && typeof p.mutation_id === "string" && Number.isSafeInteger(p.expected_revision) && same(p.resume, this.deps.parseDocument({...doc, resume:p.resume, confirmed_skills:p.confirmed_skills}).resume) ? p : null;
+          const pending = p && typeof p.mutation_id === "string" && Number.isSafeInteger(p.expected_revision) && same(p.resume, this.deps.parseDocument({...doc, resume:p.resume, confirmed_skills:p.confirmed_skills, layout:p.layout ?? doc.layout}).resume) ? p : null;
           this.dirty = dirty;
           this.pending = pending;
           this.accept(doc, false);
-          this.change({resume: candidate.resume, confirmedSkills: candidate.confirmed_skills, saveState: this.dirty ? "local" : "saved", analysis:this.dirty && doc.analysis ? {...doc.analysis,status:doc.analysis.score ? "stale":"unavailable"} : doc.analysis});
+          this.change({resume: candidate.resume, layout:candidate.layout ?? null, confirmedSkills: candidate.confirmed_skills, saveState: this.dirty ? "local" : "saved", analysis:this.dirty && doc.analysis ? {...doc.analysis,status:doc.analysis.score ? "stale":"unavailable"} : doc.analysis});
         }
       }
     } catch {
@@ -107,7 +109,7 @@ export class CvEditorSession {
       const latest = await this.deps.load(controller.signal);
       if (this.disposed || controller.signal.aborted) return;
       const oldRevision = this.state.document?.revision;
-      if (this.dirty && same(latest.resume, this.state.resume) && same(latest.confirmed_skills, this.state.confirmedSkills)) {
+      if (this.dirty && same(latest.resume, this.state.resume) && same(latest.confirmed_skills, this.state.confirmedSkills) && (this.state.layout === null || same(latest.layout ?? null,this.state.layout))) {
         this.dirty = false; this.pending = null;
         this.accept(latest, false);
         this.change({saveState: "saved", problem: null});
@@ -132,13 +134,13 @@ export class CvEditorSession {
     }
     if (this.dirty && this.state.saveState !== "conflict") this.schedule();
   }
-  update(resume: JsonObject, skills = this.state.confirmedSkills) {
-    if (!this.state.document || this.disposed || (same(resume, this.state.resume) && same(skills,this.state.confirmedSkills))) return;
+  update(resume: JsonObject, skills = this.state.confirmedSkills, layout = this.state.layout) {
+    if (!this.state.document || this.disposed || (same(resume, this.state.resume) && same(skills,this.state.confirmedSkills) && same(layout,this.state.layout))) return;
     this.dirty = true;
     this.firstEdit ??= Date.now();
     this.retries = 0;
     this.analyzing?.abort();
-    this.change({resume,confirmedSkills:skills, saveState:this.state.saveState === "conflict" ? "conflict" : "saving", problem:this.state.saveState === "conflict" ? this.state.problem : null, analysisLoading:false, analysis:this.state.analysis ? {...this.state.analysis,status:this.state.analysis.score ? "stale":"unavailable"} : null});
+    this.change({resume,layout,confirmedSkills:skills, saveState:this.state.saveState === "conflict" ? "conflict" : "saving", problem:this.state.saveState === "conflict" ? this.state.problem : null, analysisLoading:false, analysis:this.state.analysis ? {...this.state.analysis,status:this.state.analysis.score ? "stale":"unavailable"} : null});
     void this.persist().catch(() => this.change({saveState:"error",problem:"Device storage is unavailable. Keep this screen open and try saving again."}));
     this.schedule();
   }
@@ -157,7 +159,7 @@ export class CvEditorSession {
   }
   private async savePending(): Promise<EditorDocument | null> {
     const document = this.state.document!;
-    const payload = this.pending ?? {expected_revision: document.revision,mutation_id:this.deps.uuid(),resume:this.state.resume!,confirmed_skills:this.state.confirmedSkills};
+    const payload = this.pending ?? {expected_revision: document.revision,mutation_id:this.deps.uuid(),resume:this.state.resume!,confirmed_skills:this.state.confirmedSkills,...(this.state.layout ? {layout:this.state.layout} : {})};
     this.pending = payload;
     this.firstEdit = Date.now();
     this.change({saveState:"saving",problem:null});
@@ -170,7 +172,7 @@ export class CvEditorSession {
         await this.persist();
         return null;
       }
-      const stillSame = same(this.state.resume,payload.resume) && same(this.state.confirmedSkills,payload.confirmed_skills);
+      const stillSame = same(this.state.resume,payload.resume) && same(this.state.confirmedSkills,payload.confirmed_skills) && same(this.state.layout,payload.layout ?? null);
       this.pending = null;
       this.dirty = !stillSame;
       this.accept(saved,!stillSame);

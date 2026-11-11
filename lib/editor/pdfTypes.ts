@@ -14,11 +14,11 @@ export function pdfPageCount(value: string | null): number | undefined {
   return Number.isSafeInteger(count) && count > 0 ? count : undefined;
 }
 
-export function pdfPath(id: string, revision: number, pageSize: PdfPageSize): string {
+export function pdfPath(id: string, revision: number): string {
   if (!Number.isSafeInteger(revision) || revision < 1) {
     throw new Error("Save your CV before generating a PDF.");
   }
-  return `/tailored-cvs/${encodeURIComponent(id)}/pdf?revision=${revision}&page_size=${pageSize}`;
+  return `/tailored-cvs/${encodeURIComponent(id)}/pdf?revision=${revision}`;
 }
 
 export function validatePdfResponse(status: number, mime: string | null, revision: string | null, expected: number) {

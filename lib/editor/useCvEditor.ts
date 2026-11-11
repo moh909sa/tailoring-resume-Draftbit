@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { getEditorDocument, saveEditorDocument, recalculateEditorAnalysis } from "./api";
 import { parseEditorDocument, type JsonObject } from "./types";
 import { CvEditorSession, editorStorageKey, emptyEditorState, type EditorState } from "./session";
+import type { EditorLayout } from "./layout";
 import { readEditorRoute } from "./routes";
 
 // Old network completions may finish after navigating away. Fence writes by
@@ -58,6 +59,7 @@ export function useCvEditor(routeId: string | string[] | undefined) {
     ...value,
     routeError: route.error,
     updateResume: (resume: JsonObject, skills?: string[]) => getManager()?.update(resume,skills),
+    updateLayout: (layout: EditorLayout) => {const m=getManager();if(m?.snapshot.resume) m.update(m.snapshot.resume,m.snapshot.confirmedSkills,layout);},
     updateConfirmedSkills: (skills: string[]) => {const m=getManager();if(m?.snapshot.resume) m.update(m.snapshot.resume,skills);},
     reload: async () => {await getManager()?.refresh();},
     flush: async () => (await getManager()?.flush()) ?? null,

@@ -1,10 +1,10 @@
 import { mobileAccessToken, mobileEndpoint } from "@/lib/cv/api";
-import { pdfPath, pdfPageCount, validatePdfResponse, type EditorPdf, type PdfPageSize } from "./pdfTypes";
+import { pdfPath, pdfPageCount, validatePdfResponse, type EditorPdf } from "./pdfTypes";
 
-export async function loadEditorPdf(ownerId: string, id: string, revision: number, pageSize: PdfPageSize, signal: AbortSignal): Promise<EditorPdf> {
+export async function loadEditorPdf(ownerId: string, id: string, revision: number, signal: AbortSignal): Promise<EditorPdf> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const token = await mobileAccessToken(ownerId, attempt === 1);
-    const response = await fetch(mobileEndpoint(pdfPath(id, revision, pageSize)), {
+    const response = await fetch(mobileEndpoint(pdfPath(id, revision)), {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/pdf" },
       signal,
       cache: "no-store",

@@ -13,6 +13,7 @@ import { useCvEditor } from "@/lib/editor/useCvEditor";
 import { SectionEditor } from "@/components/editor/SectionEditor";
 import { AddCustomSectionSheet, RenameSectionSheet, SectionActionsMenu } from "@/components/editor/SectionControls";
 import { ResumeSectionList } from "@/components/editor/ResumeSectionList";
+import { DesignLayout } from "@/components/editor/DesignLayout";
 import { JobMatch } from "@/components/editor/JobMatch";
 import { addCustomSection, deleteCustomSection, duplicateCustomSection, moveSection, renameSection, replaceSection, resumeSections, withSectionMetadata, type EditorSection } from "@/components/editor/sections";
 import { isJsonObject, type JsonValue } from "@/lib/tailoring/types";
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 const statusLabels = {saved:"All changes saved",saving:"Saving changes…",local:"Saved on this device · waiting to sync",error:"Changes need syncing",conflict:"Another saved version is available"};
 
 export default function CvEditorScreen() {
-  const {id,returnTo,pageSize} = useLocalSearchParams<{id?:string|string[];returnTo?:string;pageSize?:string}>();
+  const {id,returnTo,previewReturnTo} = useLocalSearchParams<{id?:string|string[];returnTo?:string;previewReturnTo?:string}>();
   const returningToPreview = returnTo === "preview";
   const {session} = useAuth();
   const editor = useCvEditor(id);
@@ -124,8 +125,8 @@ export default function CvEditorScreen() {
       const saved = await editor.flush();
       if (!mounted.current || generation !== previewGeneration.current) return;
       if(saved) {
-        if (returningToPreview && router.canGoBack()) router.back();
-        else if (returningToPreview) router.replace({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),pageSize:pageSize === "LETTER" ? "LETTER" : "A4"}});
+        if (returningToPreview && router.canGoBack()) router.dismissTo({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),...(previewReturnTo === "library" ? {returnTo:"library"} : {})}});
+        else if (returningToPreview) router.replace({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),...(previewReturnTo === "library" ? {returnTo:"library"} : {})}});
         else router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision)}});
       }
       else setActionError("Save your latest changes before opening the PDF preview. Your edits are kept on this device.");
@@ -160,7 +161,7 @@ export default function CvEditorScreen() {
           <ResumeSectionList sections={sections} onOpen={openSection} onActions={setMenuKey} onAdd={()=>setAddingSection(true)}/>
           <View className="flex-row items-center gap-2"><LucideIcon name="ShieldCheck" size={16} className="text-muted-foreground"/><Text className="flex-1 text-caption leading-5 text-muted-foreground">Your original CV stays unchanged.</Text></View>
         </> : null}
-        {view === "edit" && editSection === "Design & Layout" ? <View className="gap-5"><View className="gap-2"><Text accessibilityRole="header" className="text-h4 text-foreground">Design & Layout</Text><Text className="text-body leading-6 text-muted-foreground">Choose how your saved resume appears on the page.</Text></View><View className="gap-4 rounded-2xl border border-border bg-card p-5"><Text className="text-h5 text-foreground">Paper size</Text><Text className="text-body leading-6 text-muted-foreground">Choose A4 or Letter in Resume Preview. Your selection applies to the PDF you view and download.</Text><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="rounded-xl"><Text>{openingPreview ? "Saving your CV…" : "Choose paper size"}</Text></Button></View></View> : null}
+        {view === "edit" && editSection === "Design & Layout" ? <DesignLayout layout={editor.layout} options={document.layout_options} onChange={editor.updateLayout} onReload={()=>void editor.reload()}/> : null}
         {/* Keep evidence/disclosure selections mounted while the other main tab is open. */}
         <View className={cn("bg-background",view === "match" ? "gap-5" : "hidden")}><JobMatch section={matchSection === "Overview" ? "overview" : "highlights"} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={()=>void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection}/></View>
       </ScrollView>

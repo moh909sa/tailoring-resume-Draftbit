@@ -38,13 +38,13 @@ function load(relative, mocks = {}) {
 function nodes(value) {
   if (!value || typeof value !== "object") return [];
   if (Array.isArray(value)) return value.flatMap(nodes);
-  const children=typeof value.type === "function" && ["ResumeSectionList","SectionActions"].includes(value.type.name) ? value.type(value.props) : value.props?.children;
+  const children=typeof value.type === "function" && ["ResumeSectionList","SectionActions","LevelControl","FontControl","LayoutFormatting"].includes(value.type.name) ? value.type(value.props) : value.props?.children;
   return [value,...nodes(children)];
 }
 function text(value) {
   if (value == null || typeof value === "boolean") return "";
   if (Array.isArray(value)) return value.map(text).join("");
-  if(typeof value === "object" && typeof value.type === "function" && ["ResumeSectionList","SectionActions"].includes(value.type.name)) return text(value.type(value.props));
+  if(typeof value === "object" && typeof value.type === "function" && ["ResumeSectionList","SectionActions","LevelControl","FontControl","LayoutFormatting"].includes(value.type.name)) return text(value.type(value.props));
   return typeof value === "object" ? text(value.props?.children) : String(value);
 }
 function harness() {
@@ -59,7 +59,7 @@ function harness() {
     useCallback(fn,deps) {return hooks.useMemo(()=>fn,deps);},
     useEffect(fn,deps) {const i=cursor++;if(!slots[i]||changed(slots[i].deps,deps)){const old=slots[i];slots[i]={deps,cleanup:old?.cleanup};effects.push(()=>{slots[i].cleanup?.();slots[i].cleanup=fn();});}},
   };
-  const router={push:href=>h.calls.push(["push",href]),replace:href=>h.calls.push(["replace",href]),back:()=>h.calls.push(["back"]),navigate:href=>h.calls.push(["navigate",href]),canGoBack:()=>h.canGoBack};
+  const router={dismissTo:href=>h.calls.push(["dismissTo",href]),push:href=>h.calls.push(["push",href]),replace:href=>h.calls.push(["replace",href]),back:()=>h.calls.push(["back"]),navigate:href=>h.calls.push(["navigate",href]),canGoBack:()=>h.canGoBack};
   const mocks={
     react:hooks,
     "react-native":{View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",Platform:{OS:"web"},Keyboard:{dismiss(){},metrics:()=>undefined},useWindowDimensions:()=>({width:390,height:844}),AppState:{addEventListener:()=>({remove(){}})}},
@@ -73,7 +73,7 @@ function harness() {
     "@react-native-async-storage/async-storage":{__esModule:true,default:{getItem:async()=>null,setItem:async()=>{}}},
     "expo-crypto":{randomUUID:()=>"44444444-4444-4444-8444-444444444444"},
   };
-  for(const [file,name] of Object.entries({"components/layout/AppScreen":"AppScreen","components/layout/AppSheet":"AppSheet","components/layout/ScreenHeader":"ScreenHeader","components/library/LibrarySections":"LibrarySections","components/cv/AccountSheet":"AccountSheet","components/cv/Notice":"Notice","components/cv/DocumentEmptyState":"DocumentEmptyState","components/ui/button":"Button","components/ui/text":"Text","components/editor/SectionEditor":"SectionEditor","components/editor/JobMatch":"JobMatch","components/editor/PdfViewer":"PdfViewer","components/editor/PdfReadability":"PdfReadability"}))mocks["@/"+file]={[name]:name};
+  for(const [file,name] of Object.entries({"components/layout/AppScreen":"AppScreen","components/layout/AppSheet":"AppSheet","components/layout/ScreenHeader":"ScreenHeader","components/library/LibrarySections":"LibrarySections","components/cv/AccountSheet":"AccountSheet","components/cv/Notice":"Notice","components/cv/DocumentEmptyState":"DocumentEmptyState","components/ui/button":"Button","components/ui/text":"Text","components/editor/SectionEditor":"SectionEditor","components/editor/DesignLayout":"DesignLayout","components/editor/JobMatch":"JobMatch","components/editor/PdfViewer":"PdfViewer","components/editor/PdfReadability":"PdfReadability"}))mocks["@/"+file]={[name]:name};
   h.open=(file,extra={},exportName='default',props={})=>{const loaded=load(file,{...mocks,...extra})[exportName];component=()=>loaded(props);h.render();};
   h.render=()=>{cursor=0;dirty=false;tree=component();for(const effect of effects.splice(0))effect();return tree;};
   h.pump=async()=>{for(let i=0;i<8;i++){await tick();if(dirty)h.render();}};
@@ -88,7 +88,8 @@ function harness() {
 }
 const routes=load("lib/editor/routes.ts");
 const {CvEditorSession}=load("lib/editor/session.ts");
-const makeDocument=()=>({tailoring_id:TAILORED,revision:6,updated_at:"2026-11-01T12:00:00Z",resume:{personalInfo:{name:"Test fixture"},summary:"Before",workExperience:[],education:[],additional:{technicalSkills:[]},sectionMeta:[['personalInfo','Personal Information','personalInfo'],['summary','Summary','text'],['workExperience','Experience','itemList'],['education','Education','itemList'],['additional','Skills','stringList']].map(([key,displayName,sectionType],order)=>({id:key,key,displayName,sectionType,isDefault:true,isVisible:true,order}))},job:{title:"Engineer",company:null,description:"Isolated test job"},confirmed_skills:[],analysis:null});
+const baseLayout=()=>({template:'swiss-single',pageSize:'A4',margins:{top:10,bottom:10,left:10,right:10},spacing:{section:3,item:2,lineHeight:3},fontSize:{base:3,headerScale:3,headerFont:'serif',bodyFont:'sans-serif'},compactMode:false,showContactIcons:false,accentColor:'blue'});
+const makeDocument=()=>({layout:baseLayout(),layout_options:{templates:['swiss-single','modern'],page_sizes:['A4','LETTER']},tailoring_id:TAILORED,revision:6,updated_at:"2026-11-01T12:00:00Z",resume:{personalInfo:{name:"Test fixture"},summary:"Before",workExperience:[],education:[],additional:{technicalSkills:[]},sectionMeta:[['personalInfo','Personal Information','personalInfo'],['summary','Summary','text'],['workExperience','Experience','itemList'],['education','Education','itemList'],['additional','Skills','stringList']].map(([key,displayName,sectionType],order)=>({id:key,key,displayName,sectionType,isDefault:true,isVisible:true,order}))},job:{title:"Engineer",company:null,description:"Isolated test job"},confirmed_skills:[],analysis:null});
 
 test("route parameters require a single tailored UUID and optional positive saved revision",()=>{
   for(const id of [undefined,"","[id]","not-a-uuid",[TAILORED,SOURCE]])assert.ok(routes.readEditorRoute({id}).error);
@@ -137,7 +138,7 @@ test("PDF screen loads the saved tailoring revision, shares the exact artifact, 
   const artifact={uri:"blob:isolated-pdf-test",filename:"Tailored.pdf",revision:7,dispose:async()=>seen.push("disposed")};
   h.open("app/cv-editor/[id]/preview.tsx",{"@/lib/editor/api":{getEditorDocument:async(owner,id)=>{assert.equal(owner,OWNER);assert.equal(id,TAILORED);return {...makeDocument(),revision:7};}},"@/lib/editor/pdf":{loadEditorPdf:async(owner,id,revision,size)=>{seen.push([owner,id,revision,size]);return artifact;},shareEditorPdf:async pdf=>{assert.equal(pdf,artifact);seen.push("shared");}}});
   await h.pump();assert.equal(h.find(n=>n.type==="PdfViewer").props.uri,artifact.uri);
-  assert.deepEqual(seen[0],[OWNER,TAILORED,7,"A4"]);
+  assert.deepEqual(seen[0].slice(0,3),[OWNER,TAILORED,7]);assert.ok(seen[0][3] instanceof AbortSignal);
   h.button("Download PDF").props.onPress();await h.pump();assert.ok(seen.includes("shared"));
   h.find(n=>n.props?.accessibilityLabel==="Back").props.onPress();assert.deepEqual(h.calls.at(-1),["back"]);h.dispose();await tick();assert.ok(seen.includes("disposed"));
 });
@@ -166,9 +167,9 @@ test("editor API sends current save contract to tailoring ID and rejects mismatc
     let response=makeDocument();
     global.fetch=async(url,options)=>{calls.push({url,options});return {ok:true,status:200,json:async()=>copy(response)};};
     assert.equal((await api.getEditorDocument(OWNER,TAILORED,new AbortController().signal)).tailoring_id,TAILORED);
-    const payload={expected_revision:6,mutation_id:'44444444-4444-4444-8444-444444444444',resume:{summary:'User edit'},confirmed_skills:['TypeScript']};
-    response={...response,revision:7,resume:payload.resume,confirmed_skills:payload.confirmed_skills};
-    await api.saveEditorDocument(OWNER,TAILORED,payload,new AbortController().signal);
+    const payload={expected_revision:6,mutation_id:'44444444-4444-4444-8444-444444444444',resume:{summary:'User edit'},confirmed_skills:['TypeScript'],layout:{...baseLayout(),template:'modern'}};
+    response={...response,revision:7,resume:payload.resume,confirmed_skills:payload.confirmed_skills,layout:payload.layout};
+    const saved=await api.saveEditorDocument(OWNER,TAILORED,payload,new AbortController().signal);assert.equal(saved.revision,7);assert.deepEqual(saved.layout,payload.layout);
     assert.equal(calls[1].url,'https://contract-test.invalid/api/v1/mobile/tailored-cvs/'+TAILORED+'/editor');
     assert.equal(calls[1].options.method,'PATCH');assert.deepEqual(JSON.parse(calls[1].options.body),payload);
     assert.equal(calls[1].options.headers.Authorization,'Bearer isolated-test-token');
@@ -184,11 +185,11 @@ test("web PDF transport pins revision, validates response, and download uses the
   let artifact;
   try {
     global.fetch=async(url,options)=>{
-      assert.equal(url,'https://contract-test.invalid/api/v1/mobile/tailored-cvs/'+TAILORED+'/pdf?revision=7&page_size=A4');
+      assert.equal(url,'https://contract-test.invalid/api/v1/mobile/tailored-cvs/'+TAILORED+'/pdf?revision=7');
       assert.equal(options.headers.Authorization,'Bearer isolated-test-token');
       return {ok:true,status:200,headers:new Headers({'content-type':'application/pdf','x-resume-revision':'7','x-pdf-page-count':'1'}),blob:async()=>new Blob(['%PDF-1.4\nIsolated transport test'],{type:'application/pdf'})};
     };
-    artifact=await service.loadEditorPdf(OWNER,TAILORED,7,'A4',new AbortController().signal);
+    artifact=await service.loadEditorPdf(OWNER,TAILORED,7,new AbortController().signal);
     assert.equal(artifact.revision,7);assert.equal(artifact.pageCount,1);
     const anchor={click(){clicked=true;downloadHref=this.href;},remove(){}};
     global.document={createElement:()=>anchor,body:{appendChild(){}}};
@@ -315,70 +316,38 @@ test('saved editor can switch repeatedly between Edit CV and Job Match through n
   assert.equal(updates,1);assert.deepEqual(editor.resume,document.resume);h.dispose();
 });
 
-test('native PDF loading-to-document and paper-size transitions preserve context and Back returns to the editor',async(t)=>{
-  const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,revision:'6'};
-  let release,reads=0;const pending=new Promise(resolve=>release=resolve);
-  const sizes=[];
-  h.open('app/cv-editor/[id]/preview.tsx',{
-    '@/lib/editor/api':{getEditorDocument:async()=>++reads===1?pending:makeDocument()},
-    '@/lib/editor/pdf':{loadEditorPdf:async(owner,id,revision,size)=>{sizes.push(size);return{uri:'file:///isolated/'+size+'.pdf',revision,dispose:async()=>{}};},shareEditorPdf:async()=>{}}
-  });
-  h.render();
-  const children=node=>Array.isArray(node.props.children)?node.props.children:[node.props.children];
-  const loading=()=>h.find(n=>n.type==='View'&&children(n).some(c=>c?.type==='Spinner'));
-  const document=()=>h.find(n=>n.type==='View'&&children(n).some(c=>c?.type==='PdfViewer'));
-  const paint=await nativeTransition();paint(loading().props.className);
-  release(makeDocument());await h.pump();
-  assert.doesNotThrow(()=>paint(document().props.className));
-  h.find(n=>n.props.accessibilityLabel==='Letter paper size').props.onPress();h.render();
-  assert.doesNotThrow(()=>paint(loading().props.className));await h.pump();
-  assert.doesNotThrow(()=>paint(document().props.className));assert.deepEqual(sizes,['A4','LETTER']);
-  h.find(n=>n.props.accessibilityLabel==='Back').props.onPress();assert.deepEqual(h.calls.at(-1),['back']);h.dispose();
+test('native PDF loading-to-document transitions preserve context; paper size is saved in the editor',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,revision:'6'};
+ let release;const pending=new Promise(resolve=>release=resolve),seen=[];
+ h.open('app/cv-editor/[id]/preview.tsx',{'@/lib/editor/api':{getEditorDocument:async()=>pending},'@/lib/editor/pdf':{loadEditorPdf:async(owner,id,revision,signal)=>{seen.push([revision,signal]);return{uri:'file:///saved.pdf',revision,dispose:async()=>{}};},shareEditorPdf:async()=>{}}});
+ const children=node=>Array.isArray(node.props.children)?node.props.children:[node.props.children];
+ const loading=()=>h.find(n=>n.type==='View'&&children(n).some(c=>c?.type==='Spinner'));
+ const document=()=>h.find(n=>n.type==='View'&&children(n).some(c=>c?.type==='PdfViewer'));
+ const paint=await nativeTransition();paint(loading().props.className);release(makeDocument());await h.pump();
+ assert.doesNotThrow(()=>paint(document().props.className));assert.equal(seen[0][0],6);assert.ok(seen[0][1] instanceof AbortSignal);
+ assert.equal(h.find(n=>n.props.accessibilityLabel==='Letter paper size'),undefined);
+ h.find(n=>n.props.accessibilityLabel==='Back').props.onPress();assert.deepEqual(h.calls.at(-1),['back']);
 });
 
-test('iOS preview downloads directly, then reloads edited saved content on return with the selected paper size',async(t)=>{
-  for(const size of ['A4','LETTER'])await t.test(size,async(t)=>{
-    const h=harness();t.after(()=>h.dispose());h.mocks['react-native'].Platform.OS='ios';
-    h.params={id:TAILORED,revision:'6'};
-    let remote=makeDocument(),release,signal;const loaded=[],shared=[],disposed=[];
-    h.open('app/cv-editor/[id]/preview.tsx',{
-      '@/lib/editor/api':{getEditorDocument:async()=>copy(remote)},
-      '@/lib/editor/pdf':{
-        loadEditorPdf:async(owner,id,revision,pageSize,abort)=>{
-          assert.equal(owner,OWNER);assert.equal(id,TAILORED);signal=abort;
-          if(revision===7)await new Promise(resolve=>release=resolve);
-          const artifact={uri:`file:///saved-${revision}-${pageSize}.pdf`,revision,pageCount:2,dispose:async()=>disposed.push(`${revision}-${pageSize}`)};
-          loaded.push({artifact,pageSize,summary:remote.resume.summary});return artifact;
-        },
-        shareEditorPdf:async pdf=>shared.push(pdf),
-      },
-    });
-    await h.pump();
-    if(size==='LETTER'){
-      h.find(n=>n.props.accessibilityLabel==='Letter paper size').props.onPress();await h.pump();
-    }
-    assert.match(h.getText(),/Engineer/);assert.match(h.getText(),/2 pages/);
-    h.button('Download PDF').props.onPress();await h.pump();
-    assert.equal(shared[0],loaded.at(-1).artifact);assert.equal(loaded.at(-1).pageSize,size);
-    h.button('Edit Resume').props.onPress();
-    assert.deepEqual(h.calls.at(-1),['push',{pathname:'/cv-editor/[id]',params:{id:TAILORED,returnTo:'preview',pageSize:size}}]);
-    h.blur();await h.pump();assert.equal(signal.aborted,true);
-    assert.equal(h.button('Download PDF').props.disabled,true);
-    remote={...remote,revision:7,resume:{...remote.resume,summary:'Updated saved content'}};
-    h.focus();await h.pump();assert.equal(h.button('Download PDF').props.disabled,true,'cannot download the old artifact during refresh');
-    release();await h.pump();
-    assert.equal(loaded.at(-1).pageSize,size);assert.equal(loaded.at(-1).summary,'Updated saved content');
-    assert.match(h.getText(),/Version 7/);
-    assert.equal(h.find(n=>n.type==='PdfViewer').props.uri,loaded.at(-1).artifact.uri);
-    h.button('Download PDF').props.onPress();await h.pump();
-    assert.equal(shared[1],loaded.at(-1).artifact);assert.equal(shared[1].revision,7);
-    assert.ok(disposed.includes(`6-${size}`));
-  });
+test('iOS preview downloads the same saved artifact and pins a new acknowledged layout revision after editing',async(t)=>{
+ for(const template of ['swiss-single','modern'])await t.test(template,async(t)=>{
+  const h=harness();t.after(()=>h.dispose());h.mocks['react-native'].Platform.OS='ios';h.params={id:TAILORED,revision:'6'};
+  let remote={...makeDocument(),layout:{...baseLayout(),template}},release,signal;const loaded=[],shared=[],disposed=[];
+  h.open('app/cv-editor/[id]/preview.tsx',{'@/lib/editor/api':{getEditorDocument:async()=>copy(remote)},'@/lib/editor/pdf':{loadEditorPdf:async(owner,id,revision,abort)=>{signal=abort;if(revision===7)await new Promise(resolve=>release=resolve);const artifact={uri:`file:///saved-${revision}.pdf`,revision,pageCount:2,dispose:async()=>disposed.push(revision)};loaded.push({artifact,layout:copy(remote.layout),summary:remote.resume.summary});return artifact;},shareEditorPdf:async pdf=>shared.push(pdf)}});
+  await h.pump();h.button('Download PDF').props.onPress();await h.pump();assert.equal(shared[0],loaded.at(-1).artifact);assert.equal(loaded.at(-1).layout.template,template);
+  h.button('Edit Resume').props.onPress();assert.deepEqual(h.calls.at(-1),['push',{pathname:'/cv-editor/[id]',params:{id:TAILORED,returnTo:'preview'}}]);
+  h.blur();await h.pump();assert.equal(signal.aborted,true);assert.equal(h.button('Download PDF').props.disabled,true);
+  remote={...remote,revision:7,resume:{...remote.resume,summary:'Updated saved content'}};h.params={id:TAILORED,revision:'7'};
+  h.focus();await h.pump();assert.equal(h.button('Download PDF').props.disabled,true);release();await h.pump();
+  assert.equal(loaded.at(-1).summary,'Updated saved content');assert.match(h.getText(),/Version 7/);assert.equal(h.find(n=>n.type==='PdfViewer').props.uri,loaded.at(-1).artifact.uri);
+  const check=h.find(n=>n.type==='PdfReadability');assert.equal(check.props.revision,7);assert.equal(check.props.pageSize,undefined);
+  h.button('Download PDF').props.onPress();await h.pump();assert.equal(shared[1],loaded.at(-1).artifact);assert.equal(shared[1].revision,7);assert.ok(disposed.includes(6));
+ });
 });
 
 test('editing from preview waits for saving before returning, retains recovery on failure, and avoids duplicate previews',async(t)=>{
   for(const action of ['Back to PDF preview','Preview PDF'])await t.test(action,async(t)=>{
-    const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,returnTo:'preview',pageSize:'LETTER'};
+    const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,returnTo:'preview',previewReturnTo:'library'};
     const document=makeDocument();let finish;
     const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:()=>new Promise(resolve=>finish=resolve)};
     h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
@@ -386,7 +355,7 @@ test('editing from preview waits for saving before returning, retains recovery o
     press();await h.pump();assert.deepEqual(h.calls,[]);
     finish(null);await h.pump();assert.deepEqual(h.calls,[]);assert.match(h.find(n=>n.type==='Notice').props.message,/Save your latest changes/);
     press();await h.pump();finish({...document,revision:7});await h.pump();
-    assert.deepEqual(h.calls,[['back']]);
+    assert.deepEqual(h.calls,[['dismissTo',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnTo:'library'}}]]);
   });
 });
 
@@ -403,11 +372,11 @@ test('preview refresh failures cannot download the previous saved artifact',asyn
 
 test('returning editor without navigation history replaces itself with the saved Letter preview',async(t)=>{
   const h=harness();t.after(()=>h.dispose());h.canGoBack=false;
-  h.params={id:TAILORED,returnTo:'preview',pageSize:'LETTER'};const document=makeDocument();
+  h.params={id:TAILORED,returnTo:'preview',previewReturnTo:'library'};const document=makeDocument();
   const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>({...document,revision:8})};
   h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
   h.find(n=>n.props.accessibilityLabel==='Back to PDF preview').props.onPress();await h.pump();
-  assert.deepEqual(h.calls,[['replace',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'8',pageSize:'LETTER'}}]]);
+  assert.deepEqual(h.calls,[['replace',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'8',returnTo:'library'}}]]);
 });
 
 test('editor sections respect saved names/order while keeping Personal Information first and preserving custom fields',()=>{
@@ -443,16 +412,16 @@ test('Job Match keeps engine precision, disclosure order and stale evidence boun
   props.analysis=null;props.section='overview';h.render();assert.match(h.getText(),/Not calculated/);assert.doesNotMatch(h.getText(),/72\.4/);h.dispose();
 });
 
-test('Design & Layout reuses paper-size controls in Preview after a successful save',async()=>{
-  const h=harness(),document=makeDocument();let finish;
-  h.params={id:TAILORED,returnTo:'preview',pageSize:'LETTER'};
-  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:()=>new Promise(resolve=>finish=resolve)};
-  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
-  assert.equal(h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Edit CV').props.accessibilityState.selected,true);
-  h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.onPress();h.render();
-  assert.equal(h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.accessibilityState.selected,true);assert.equal(h.find(n=>n.type==='AppSheet'),undefined);assert.doesNotMatch(h.getText(),/Font size|Line spacing|Margins/);
-  h.button('Choose paper size').props.onPress();await h.pump();assert.deepEqual(h.calls,[]);
-  finish({...document,revision:7});await h.pump();assert.deepEqual(h.calls,[['back']]);h.dispose();
+test('Design & Layout uses the saved layout and capabilities, with one Preview PDF that waits for acknowledgement',async()=>{
+ const h=harness(),document=makeDocument();let finish;
+ h.params={id:TAILORED,returnTo:'preview',previewReturnTo:'library'};
+ const editor={document,resume:document.resume,layout:document.layout,updateLayout:()=>{},confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:()=>new Promise(resolve=>finish=resolve)};
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+ h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.onPress();h.render();
+ const design=h.find(n=>n.type==='DesignLayout');assert.equal(design.props.layout,editor.layout);assert.equal(design.props.options,document.layout_options);assert.equal(design.props.onChange,editor.updateLayout);
+ assert.equal(nodes(h.render()).filter(n=>n.type==='Button'&&text(n)==='Preview PDF').length,1);
+ h.button('Preview PDF').props.onPress();await h.pump();assert.deepEqual(h.calls,[]);finish({...document,revision:7});await h.pump();
+ assert.deepEqual(h.calls,[['dismissTo',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnTo:'library'}}]]);h.dispose();
 });
 
 test('Add Job saves a new role through the existing revision flow without changing existing role bullets',async()=>{
@@ -469,7 +438,7 @@ test('Add Job saves a new role through the existing revision flow without changi
 });
 
 test('four editor secondary tabs remember their main-tab selection without discarding a pending Summary save',async(t)=>{
-  const h=harness();t.after(()=>h.dispose());h.mocks['react-native'].Platform.OS='ios';h.params={id:TAILORED,returnTo:'preview',pageSize:'LETTER'};
+  const h=harness();t.after(()=>h.dispose());h.mocks['react-native'].Platform.OS='ios';h.params={id:TAILORED,returnTo:'preview',previewReturnTo:'library'};
   let remote=makeDocument(),release,saves=0;
   const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{saves++;await new Promise(resolve=>release=resolve);remote={...remote,revision:7,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
   t.after(()=>manager.dispose());await manager.restore();
@@ -480,7 +449,7 @@ test('four editor secondary tabs remember their main-tab selection without disca
   h.find(n=>n.props.accessibilityLabel==='Edit Summary').props.onPress();h.render();
   const section=h.find(n=>n.type==='SectionEditor');section.props.onChange('Pending complete Summary');section.props.onClose();await h.pump();
   assert.equal(saves,1);assert.equal(manager.snapshot.saveState,'saving');
-  select('Design & Layout');assert.ok(h.button('Choose paper size'));assert.equal(h.find(n=>n.props.accessibilityLabel==='Edit Summary'),undefined);
+  select('Design & Layout');assert.ok(h.find(n=>n.type==='DesignLayout'));assert.equal(h.find(n=>n.props.accessibilityLabel==='Edit Summary'),undefined);
   select('Job Match');assert.equal(tab('Overview').props.accessibilityState.selected,true);assert.equal(h.find(n=>n.type==='JobMatch').props.section,'overview');
   select('Keyword Highlights');assert.equal(h.find(n=>n.type==='JobMatch').props.section,'highlights');
   select('Edit CV');assert.equal(tab('Design & Layout').props.accessibilityState.selected,true);
@@ -489,7 +458,7 @@ test('four editor secondary tabs remember their main-tab selection without disca
   select('Overview');select('Edit CV');assert.equal(tab('Resume Content').props.accessibilityState.selected,true);
   assert.equal(saves,1);assert.deepEqual(h.calls,[]);assert.equal(h.find(n=>n.type==='ScrollView').props.keyboardDismissMode,'interactive');
   release();await h.pump();assert.equal(manager.snapshot.saveState,'saved');assert.equal(remote.resume.summary,'Pending complete Summary');
-  h.button('Preview PDF').props.onPress();await h.pump();assert.deepEqual(h.calls,[['back']]);
+  h.button('Preview PDF').props.onPress();await h.pump();assert.deepEqual(h.calls,[['dismissTo',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnTo:'library'}}]]);
 });
 
 test('Resume Content restores full tappable rows, ordered sections, one-line Summary and useful empty hints',()=>{
@@ -687,4 +656,29 @@ test('custom titles get two lines and retain separate edit/action targets; the c
  const label=editor.button('Section actions');assert.ok(label);assert.equal(label.props.accessibilityLabel,`Actions for ${name}`);
  label.props.onPress();editor.render();const menu=editor.find(n=>typeof n.type==='function'&&n.type.name==='SectionActionsMenu');
  assert.equal(menu.props.actions.label,name);assert.equal(menu.props.actions.onDelete,actions.onDelete);editor.dispose();
+});
+
+test('Design & Layout displays only server-supported cards and paper sizes; Formatting controls preserve the full layout',()=>{
+ const h=harness(),changes=[],props={layout:baseLayout(),options:{templates:['swiss-single','modern'],page_sizes:['A4','LETTER']},onChange:next=>{changes.push(next);props.layout=next;},onReload:()=>{}};
+ h.open('components/editor/DesignLayout.tsx',{},'DesignLayout',props);
+ assert.equal(h.find(n=>n.props.accessibilityLabel==='Single Column template').props.accessibilityState.checked,true);
+ assert.equal(h.find(n=>n.props.accessibilityLabel==='Two Column template'),undefined);
+ h.find(n=>n.props.accessibilityLabel==='Modern template').props.onPress();h.render();assert.equal(changes.at(-1).template,'modern');assert.equal(h.find(n=>n.props.accessibilityLabel==='Modern template').props.accessibilityState.checked,true);
+ h.find(n=>n.props.accessibilityLabel==='Letter paper size').props.onPress();h.render();assert.equal(changes.at(-1).pageSize,'LETTER');
+ assert.equal(h.find(n=>n.props.accessibilityLabel==='Increase top margin'),undefined);
+ h.find(n=>n.props.accessibilityLabel==='Formatting').props.onPress();h.render();
+ h.find(n=>n.props.accessibilityLabel==='Increase top margin').props.onPress();h.render();assert.equal(changes.at(-1).margins.top,11);assert.equal(changes.at(-1).margins.bottom,10);assert.equal(changes.at(-1).template,'modern');
+ h.find(n=>n.props.accessibilityLabel==='Increase line spacing').props.onPress();h.render();assert.equal(changes.at(-1).spacing.lineHeight,4);
+ h.find(n=>n.props.accessibilityLabel==='Increase text size').props.onPress();h.render();assert.equal(changes.at(-1).fontSize.base,4);
+ h.find(n=>n.props.accessibilityLabel==='Body font: Mono').props.onPress();h.render();assert.equal(changes.at(-1).fontSize.bodyFont,'mono');assert.equal(changes.at(-1).fontSize.headerFont,'serif');assert.equal(changes.at(-1).pageSize,'LETTER');
+ props.layout={...props.layout,margins:{...props.layout.margins,top:25},fontSize:{...props.layout.fontSize,base:1}};h.render();
+ assert.equal(h.find(n=>n.props.accessibilityLabel==='Increase top margin').props.disabled,true);assert.equal(h.find(n=>n.props.accessibilityLabel==='Decrease text size').props.disabled,true);
+ assert.equal(h.button('Preview PDF'),undefined);h.dispose();
+});
+
+test('an explicit acknowledged PDF revision cannot drift to a newer server layout',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,revision:'7',pageSize:'LETTER'};
+ const seen=[];
+ h.open('app/cv-editor/[id]/preview.tsx',{'@/lib/editor/api':{getEditorDocument:async()=>({...makeDocument(),revision:9,layout:{...baseLayout(),template:'modern',pageSize:'LETTER'}})},'@/lib/editor/pdf':{loadEditorPdf:async(owner,id,revision,signal)=>{seen.push([revision,signal]);return{uri:'blob:revision-seven',revision,dispose:async()=>{}};},shareEditorPdf:async()=>{}}});
+ await h.pump();assert.equal(seen[0][0],7);assert.ok(seen[0][1] instanceof AbortSignal);assert.equal(h.find(n=>n.type==='PdfReadability').props.revision,7);assert.match(h.getText(),/Version 7/);assert.doesNotMatch(h.getText(),/Modern · Letter/);
 });

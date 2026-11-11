@@ -2,9 +2,9 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Crypto from "expo-crypto";
 import { mobileAccessToken, mobileEndpoint } from "@/lib/cv/api";
-import { pdfPath, pdfPageCount, validatePdfResponse, type EditorPdf, type PdfPageSize } from "./pdfTypes";
+import { pdfPath, pdfPageCount, validatePdfResponse, type EditorPdf } from "./pdfTypes";
 
-export async function loadEditorPdf(ownerId: string, id: string, revision: number, pageSize: PdfPageSize, signal: AbortSignal): Promise<EditorPdf> {
+export async function loadEditorPdf(ownerId: string, id: string, revision: number, signal: AbortSignal): Promise<EditorPdf> {
   if (!FileSystem.cacheDirectory) throw new Error("PDF storage is unavailable on this device.");
   const directory = `${FileSystem.cacheDirectory}cv-preview-${Crypto.randomUUID()}/`;
   const filename = `Tailored-CV-v${revision}.pdf`;
@@ -15,7 +15,7 @@ export async function loadEditorPdf(ownerId: string, id: string, revision: numbe
     if (signal.aborted) throw new Error("PDF preview canceled.");
     await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
     if (signal.aborted) { await dispose(); throw new Error("PDF preview canceled."); }
-    const task = FileSystem.createDownloadResumable(mobileEndpoint(pdfPath(id, revision, pageSize)), uri, {
+    const task = FileSystem.createDownloadResumable(mobileEndpoint(pdfPath(id, revision)), uri, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/pdf" },
       cache: false,
       sessionType: FileSystem.FileSystemSessionType.FOREGROUND,

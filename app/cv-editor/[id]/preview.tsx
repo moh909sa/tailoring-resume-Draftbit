@@ -6,17 +6,18 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { getEditorDocument } from "@/lib/editor/api";
 import { readEditorRoute } from "@/lib/editor/routes";
 import { loadEditorPdf, shareEditorPdf } from "@/lib/editor/pdf";
-import type { EditorPdf, PdfPageSize } from "@/lib/editor/pdfTypes";
+import type { EditorPdf } from "@/lib/editor/pdfTypes";
+import { layoutTemplateName, type EditorLayout } from "@/lib/editor/layout";
 import { PdfViewer } from "@/components/editor/PdfViewer";
 import { PdfReadability } from "@/components/editor/PdfReadability";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import Icon from "@/lib/icons/LucideIcon";
 
-type Preview = { ownerId: string; id: string; pageSize: PdfPageSize; requestedRevision: number | undefined; title: string; pdf: EditorPdf };
+type Preview = { ownerId: string; id: string; layout: EditorLayout | undefined; requestedRevision: number | undefined; title: string; pdf: EditorPdf };
 
 export default function CvPdfPreview() {
-  const params = useLocalSearchParams<{ id?: string | string[]; revision?: string | string[]; pageSize?: string; returnTo?: string }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; revision?: string | string[]; returnTo?: string }>();
   const route = readEditorRoute(params);
   const id = route.id;
   const expectedRevision = route.revision;
@@ -24,14 +25,13 @@ export default function CvPdfPreview() {
   const router = useRouter();
   const { session, loading: authLoading } = useAuth();
   const ownerId = session?.user.id;
-  const [pageSize, setPageSize] = useState<PdfPageSize>(params.pageSize === "LETTER" ? "LETTER" : "A4");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [viewError, setViewError] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const pdf = !routeError && preview && preview.ownerId === ownerId && preview.id === id && preview.pageSize === pageSize && preview.requestedRevision === expectedRevision ? preview.pdf : null;
+  const pdf = !routeError && preview && preview.ownerId === ownerId && preview.id === id && preview.requestedRevision === expectedRevision ? preview.pdf : null;
   const goBack = () => {
     if (!id) router.replace("/(tabs)/library/tailored-cvs");
     else if (routeError) router.replace({ pathname: "/cv-editor/[id]", params: { id } });
@@ -40,7 +40,7 @@ export default function CvPdfPreview() {
   };
   const editResume = () => {
     if (!id || routeError || sharing) return;
-    router.push({ pathname: "/cv-editor/[id]", params: { id, returnTo: "preview", pageSize } });
+    router.push({ pathname: "/cv-editor/[id]", params: { id, returnTo: "preview", ...(params.returnTo === "library" ? {previewReturnTo:"library"} : {}) } });
   };
 
   useFocusEffect(useCallback(() => {
@@ -58,14 +58,15 @@ export default function CvPdfPreview() {
         const document = await getEditorDocument(ownerId, id, controller.signal);
         if (!current) return;
         if (controller.signal.aborted) throw new Error("PDF preview canceled.");
-        // A return from editing may have a newer revision than the original URL.
-        // Always render the latest acknowledged save, and pin download to that artifact.
+        // An explicit revision is the immutable save acknowledged by the editor.
+        // Export, download and readability checks all stay pinned to it.
         if (expectedRevision !== undefined && document.revision < expectedRevision) throw new Error("Your latest saved version is not available yet. Please try again.");
-        const loadedPdf = await loadEditorPdf(ownerId, id, document.revision, pageSize, controller.signal);
+        const revision=expectedRevision ?? document.revision;
+        const loadedPdf = await loadEditorPdf(ownerId, id, revision, controller.signal);
         artifact = loadedPdf;
         if (!current || controller.signal.aborted) { await loadedPdf.dispose(); return; }
         const title = [document.job.title, document.job.company].filter(Boolean).join(" · ") || "Your tailored CV";
-        setPreview({ ownerId, id, pageSize, requestedRevision: expectedRevision, title, pdf: loadedPdf });
+        setPreview({ ownerId, id, layout:document.revision === revision ? document.layout : undefined, requestedRevision: expectedRevision, title, pdf: loadedPdf });
       } catch (cause) {
         if (current) setError(controller.signal.aborted ? "Generating your PDF took too long. Please try again." : cause instanceof Error ? cause.message : "Your PDF could not be loaded. Please try again.");
       } finally {
@@ -81,7 +82,7 @@ export default function CvPdfPreview() {
       setLoading(false);
       void artifact?.dispose().catch(() => undefined);
     };
-  }, [ownerId, id, expectedRevision, pageSize, routeError, attempt]));
+  }, [ownerId, id, expectedRevision, routeError, attempt]));
 
   async function download() {
     if (!pdf || sharing) return;
@@ -102,9 +103,7 @@ export default function CvPdfPreview() {
             <View className="flex-1 gap-1"><Text accessibilityRole="header" numberOfLines={2} className="text-h5 text-foreground">{pdf ? preview?.title : "Your tailored CV"}</Text><Text className="text-caption text-muted-foreground">{pdf ? `${pdf.pageCount ? `${pdf.pageCount} ${pdf.pageCount === 1 ? "page" : "pages"} · ` : ""}Version ${pdf.revision}` : "PDF preview"}</Text></View>
           </View>
           <View className="flex-row items-center justify-between gap-3">
-          <View className="flex-row rounded-lg border border-border bg-background p-1">
-            {(["A4", "LETTER"] as const).map(size => <Pressable key={size} disabled={sharing} accessibilityRole="button" accessibilityLabel={`${size === "A4" ? "A4" : "Letter"} paper size`} accessibilityState={{ selected: pageSize === size, disabled: sharing }} onPress={() => setPageSize(size)} className={`min-h-10 justify-center rounded-md px-3 ${pageSize === size ? "bg-primary" : "bg-background"}`}><Text className={pageSize === size ? "text-caption text-primary-foreground" : "text-caption text-muted-foreground"}>{size === "A4" ? "A4" : "Letter"}</Text></Pressable>)}
-          </View>
+          <Text className="min-w-0 flex-1 text-caption text-muted-foreground">{preview?.layout ? `${layoutTemplateName(preview.layout.template)} · ${preview.layout.pageSize === "LETTER" ? "Letter" : "A4"}` : "Saved layout"}</Text>
           <Button variant="outline" accessibilityLabel="Edit Resume" className="min-h-11 flex-row gap-2 rounded-xl" disabled={!id || !!routeError || !ownerId || sharing} onPress={editResume}><Icon name="Pencil" className="h-4 w-4 text-foreground" /><Text>Edit Resume</Text></Button>
           </View>
         </View>
@@ -113,7 +112,7 @@ export default function CvPdfPreview() {
         {routeError ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{routeError}</Text><Button onPress={goBack}><Text>{id ? "Return to editor" : "Return to Tailored CVs"}</Text></Button></View> : authLoading || (ownerId && (loading || (!pdf && !error))) ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><ActivityIndicator size="large" /><Text className="text-body text-muted-foreground">Preparing your saved CV…</Text></View> : !ownerId ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Text className="text-center text-body text-muted-foreground">Please sign in to preview your CV.</Text><Button onPress={editResume}><Text>Return to editor</Text></Button></View> : pdf ? <View className="flex-1 overflow-hidden bg-muted">{viewError ? <View className="flex-1 items-center justify-center px-8"><Text className="text-center text-body text-muted-foreground">The preview could not be displayed. Your PDF is ready to download below.</Text></View> : <PdfViewer key={pdf.uri} uri={pdf.uri} onError={() => setViewError(true)} />}</View> : <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Icon name="FileText" className="h-10 w-10 text-muted-foreground" /><Text className="text-center text-h4 text-foreground">PDF unavailable</Text><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{error || "Your PDF could not be loaded."}</Text><Button onPress={() => setAttempt(value => value + 1)}><Text>Try again</Text></Button><Button variant="ghost" onPress={editResume}><Text>Edit Resume</Text></Button></View>}
 
         <View className="gap-2 border-t border-border px-4 py-3">
-          {pdf && ownerId && id ? <PdfReadability key={pdf.uri} ownerId={ownerId} id={id} revision={pdf.revision} pageSize={pageSize} /> : null}
+          {pdf && ownerId && id ? <PdfReadability key={pdf.uri} ownerId={ownerId} id={id} revision={pdf.revision} /> : null}
           {pdf && error ? <Text accessibilityRole="alert" className="text-body text-destructive">{error}</Text> : null}
           <Button className="flex-row gap-2 rounded-xl" disabled={!pdf || loading || sharing} onPress={() => void download()}>{sharing ? <ActivityIndicator /> : <Icon name="Download" className="h-5 w-5 text-primary-foreground" />}<Text>{sharing ? "Opening…" : "Download PDF"}</Text></Button>
           <Text className="text-center text-caption text-muted-foreground">{Platform.OS === "ios" ? "Choose Save to Files in the share sheet, or share your CV directly." : "Downloads the same saved document shown in this preview."}</Text>

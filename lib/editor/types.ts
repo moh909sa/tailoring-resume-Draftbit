@@ -1,4 +1,5 @@
 import { isJsonObject, stringList, type JsonObject } from "@/lib/tailoring/types";
+import { parseEditorLayout, parseLayoutOptions, type EditorLayout, type LayoutOptions } from "./layout";
 import { isRecord } from "@/lib/cv/types";
 export type { JsonObject, JsonValue } from "@/lib/tailoring/types";
 
@@ -28,6 +29,8 @@ export type EditorDocument = {
   revision: number;
   updated_at: string;
   resume: JsonObject;
+  layout?: EditorLayout;
+  layout_options?: LayoutOptions;
   job: { title: string | null; company: string | null; description: string };
   confirmed_skills: string[];
   analysis: EditorAnalysis | null;
@@ -36,6 +39,7 @@ export type EditorSave = {
   expected_revision: number;
   mutation_id: string;
   resume: JsonObject;
+  layout?: EditorLayout;
   confirmed_skills: string[];
 };
 export type TailoredCvSummary = {
@@ -72,7 +76,7 @@ export function parseEditorAnalysis(value: unknown): EditorAnalysis {
 
 export function parseEditorDocument(value: unknown): EditorDocument {
   if (!isRecord(value) || typeof value.tailoring_id !== "string" || !value.tailoring_id || !revision(value.revision) || typeof value.updated_at !== "string" || !isJsonObject(value.resume) || !Object.keys(value.resume).length || !isRecord(value.job) || typeof value.job.description !== "string" || !Array.isArray(value.confirmed_skills) || !value.confirmed_skills.every(v => typeof v === "string")) throw new Error("The service returned an incomplete CV. Reload before editing.");
-  return { tailoring_id: value.tailoring_id, revision: value.revision, updated_at: value.updated_at, resume: value.resume, job: {title: textOrNull(value.job.title), company: textOrNull(value.job.company), description: value.job.description}, confirmed_skills: stringList(value.confirmed_skills), analysis: value.analysis ? parseEditorAnalysis(value.analysis) : null };
+  return { tailoring_id: value.tailoring_id, revision: value.revision, updated_at: value.updated_at, resume: value.resume, ...(value.layout != null ? {layout:parseEditorLayout(value.layout)} : {}), ...(value.layout_options != null ? {layout_options:parseLayoutOptions(value.layout_options)} : {}), job: {title: textOrNull(value.job.title), company: textOrNull(value.job.company), description: value.job.description}, confirmed_skills: stringList(value.confirmed_skills), analysis: value.analysis ? parseEditorAnalysis(value.analysis) : null };
 }
 
 export function parseTailoredCvs(value: unknown): TailoredCvSummary[] {

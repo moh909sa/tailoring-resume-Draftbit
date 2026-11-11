@@ -49,3 +49,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Resume Content shares engine section names/order with export, supports independent entry/custom-section copies, and limits rich-text tools to description fields the PDF renderer supports.
 
 - Resume Content uses one trailing section menu and named whole-section deletion through the existing save flow; item removal stays inside section editors.
+
+- Design & Layout saves full revision-bound formatting through the mobile editor API; preview, download and readability use that saved layout without paper overrides.

@@ -5,10 +5,9 @@ import { Text } from "@/components/ui/text";
 import Icon from "@/lib/icons/LucideIcon";
 import { checkEditorPdf } from "@/lib/editor/api";
 import { pdfReadabilitySummary } from "@/lib/editor/pdfReadability";
-import type { PdfPageSize } from "@/lib/editor/pdfTypes";
 import type { PdfCheck } from "@/lib/editor/types";
 
-export function PdfReadability({ ownerId, id, revision, pageSize }: { ownerId: string; id: string; revision: number; pageSize: PdfPageSize }) {
+export function PdfReadability({ ownerId, id, revision }: { ownerId: string; id: string; revision: number }) {
   const [check, setCheck] = useState<PdfCheck | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +21,7 @@ export function PdfReadability({ ownerId, id, revision, pageSize }: { ownerId: s
     setLoading(true);
     setError(null);
     try {
-      const result = await checkEditorPdf(ownerId, id, revision, pageSize, controller.signal);
+      const result = await checkEditorPdf(ownerId, id, revision, controller.signal);
       if (!controller.signal.aborted) setCheck(result);
     } catch {
       if (!controller.signal.aborted) setError("PDF checks are unavailable right now. You can still review and download your CV.");

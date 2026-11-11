@@ -40,8 +40,8 @@ export const saveEditorDocument = (ownerId: string, id: string, body: EditorSave
 export const getEditorAnalysis = (ownerId: string, id: string, signal: AbortSignal) => request(ownerId, pathFor(id) + "/ats-score", signal, parseEditorAnalysis);
 export const recalculateEditorAnalysis = (ownerId: string, id: string, revision: number, signal: AbortSignal) => request(ownerId, pathFor(id) + "/ats-score", signal, parseEditorAnalysis, "POST", {expected_revision: revision});
 export const listTailoredCvs = (ownerId: string, signal: AbortSignal, offset = 0, limit = 30) => request(ownerId, "/tailored-cvs?status=ready&limit=" + limit + "&offset=" + offset, signal, parseTailoredCvs);
-export const checkEditorPdf = (ownerId: string, id: string, revision: number, pageSize: "A4" | "LETTER", signal: AbortSignal) => request(ownerId, pathFor(id) + "/parse-check", signal, value => {
+export const checkEditorPdf = (ownerId: string, id: string, revision: number, signal: AbortSignal) => request(ownerId, pathFor(id) + "/parse-check", signal, value => {
   const check = parsePdfCheck(value);
   if (check.revision !== revision) throw new Error("This check belongs to another saved version. Check the PDF again.");
   return check;
-}, "POST", {expected_revision: revision, page_size: pageSize});
+}, "POST", {expected_revision: revision});

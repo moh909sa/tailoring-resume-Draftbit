@@ -88,7 +88,7 @@ test('stale scoring response cannot mark later unsaved edits current',async()=>{
   h.session.update({summary:'Changed after calculation'});assert.equal(h.session.snapshot.analysis.status,'stale');h.session.dispose();
 });
 test('PDF validation rejects mismatched revision, auth failures and non-PDF bodies',()=>{
-  assert.throws(()=>pdf.pdfPath('cv',0,'A4'));
+  assert.throws(()=>pdf.pdfPath('cv',0));
   assert.throws(()=>pdf.validatePdfResponse(200,'text/html','1',1));
   assert.throws(()=>pdf.validatePdfResponse(200,'application/pdf','2',1));
   assert.throws(()=>pdf.validatePdfResponse(401,'application/pdf','1',1));
