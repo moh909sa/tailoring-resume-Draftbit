@@ -38,11 +38,13 @@ function load(relative, mocks = {}) {
 function nodes(value) {
   if (!value || typeof value !== "object") return [];
   if (Array.isArray(value)) return value.flatMap(nodes);
-  return [value,...nodes(value.props?.children)];
+  const children=typeof value.type === "function" && ["ResumeSectionList","SectionActions"].includes(value.type.name) ? value.type(value.props) : value.props?.children;
+  return [value,...nodes(children)];
 }
 function text(value) {
   if (value == null || typeof value === "boolean") return "";
   if (Array.isArray(value)) return value.map(text).join("");
+  if(typeof value === "object" && typeof value.type === "function" && ["ResumeSectionList","SectionActions"].includes(value.type.name)) return text(value.type(value.props));
   return typeof value === "object" ? text(value.props?.children) : String(value);
 }
 function harness() {
@@ -76,7 +78,7 @@ function harness() {
   h.render=()=>{cursor=0;dirty=false;tree=component();for(const effect of effects.splice(0))effect();return tree;};
   h.pump=async()=>{for(let i=0;i<8;i++){await tick();if(dirty)h.render();}};
   h.find=predicate=>nodes(tree).find(predicate);
-  h.button=label=>h.find(n=>n.type==="Button"&&text(n)===label);
+  h.button=label=>h.find(n=>(n.type==="Button" || n.type==="Pressable" && n.props.accessibilityRole==="button")&&text(n)===label);
   h.getText=()=>text(tree);
   h.blur=()=>{h.focused=false;h.render();};
   h.focus=()=>{h.focused=true;h.render();};
@@ -490,7 +492,7 @@ test('four editor secondary tabs remember their main-tab selection without disca
   h.button('Preview PDF').props.onPress();await h.pump();assert.deepEqual(h.calls,[['back']]);
 });
 
-test('Resume Content restores full tappable rows, ordered sections, two-line Summary and useful empty hints',()=>{
+test('Resume Content restores full tappable rows, ordered sections, one-line Summary and useful empty hints',()=>{
   const h=harness(),document=makeDocument();document.resume.personalProjects=[];
   const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>document};
   h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
@@ -499,7 +501,7 @@ test('Resume Content restores full tappable rows, ordered sections, two-line Sum
   assert.deepEqual(rows.slice(0,5).map(n=>n.props.accessibilityLabel),['Edit Personal Information','Edit Summary','Edit Experience','Edit Education','Edit Skills']);
   assert.ok(rows.every(n=>n.type==='Pressable'&&typeof n.props.onPress==='function'));
   const summary=rows.find(n=>n.props.accessibilityLabel==='Edit Summary');
-  assert.ok(nodes(h.find(n=>n.props.accessibilityLabel==='Open Summary content')).some(n=>n.type==='Text'&&n.props.numberOfLines===2&&text(n)==='Before'));
+  assert.ok(nodes(summary).some(n=>n.type==='Text'&&n.props.numberOfLines===1&&text(n)==='Before'));
   assert.ok(nodes(summary).some(n=>n.type==='Icon'&&n.props.name==='ChevronRight'));
   assert.match(h.getText(),/Add your first project/);
   rows[0].props.onPress();h.render();assert.equal(h.find(n=>n.type==='SectionEditor').props.section.key,'personalInfo');h.dispose();
@@ -611,9 +613,9 @@ test('iOS creation waits for sheet dismissal before opening each custom section;
  let remote=makeDocument(),mutation=0;
  const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> `mutation-${++mutation}`,parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{remote={...remote,revision:remote.revision+1,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
  t.after(()=>manager.dispose());await manager.restore();
- h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,flush:()=>manager.flush(),updateResume:v=>manager.update(v)})},'@/components/editor/SectionControls':{AddCustomSectionSheet:'AddCustomSectionSheet',RenameSectionSheet:'RenameSectionSheet',SectionActions:'SectionActions'}});
- h.find(n=>n.props.accessibilityLabel==='Rename Summary').props.onPress();h.render();h.find(n=>n.type==='RenameSectionSheet').props.onSave('About Me');h.render();
- h.find(n=>n.type==='SectionActions'&&n.props.label==='Experience').props.onMove(-1);h.render();
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,flush:()=>manager.flush(),updateResume:v=>manager.update(v)})},'@/components/editor/SectionControls':{AddCustomSectionSheet:'AddCustomSectionSheet',RenameSectionSheet:'RenameSectionSheet',SectionActions:'SectionActions',SectionActionsMenu:'SectionActionsMenu'}});
+ h.find(n=>n.props.accessibilityLabel==='Actions for Summary').props.onPress();h.render();const summaryMenu=h.find(n=>n.type==='SectionActionsMenu');summaryMenu.props.onClose();summaryMenu.props.actions.onRename();h.render();h.find(n=>n.type==='RenameSectionSheet').props.onSave('About Me');h.render();
+ h.find(n=>n.props.accessibilityLabel==='Actions for Experience').props.onPress();h.render();const jobsMenu=h.find(n=>n.type==='SectionActionsMenu');jobsMenu.props.onClose();jobsMenu.props.actions.onMove(-1);h.render();
  const {resumeSections}=load('components/editor/sections.ts',{'@/components/tailoring/ReviewContent':{readableLabel:key=>key}});
  assert.deepEqual(resumeSections(manager.snapshot.resume).slice(0,3).map(s=>s.label),['Personal Information','Experience','About Me']);
  for(const type of ['text','itemList','stringList']) {
@@ -627,4 +629,41 @@ test('iOS creation waits for sheet dismissal before opening each custom section;
  await manager.refresh();h.render();
  h.find(n=>n.props.accessibilityLabel==='Edit About Me').props.onPress();h.render();assert.equal(h.find(n=>n.type==='SectionEditor').props.section.key,'summary');assert.equal(h.find(n=>n.type==='SectionEditor').props.section.value,'Before');
  assert.deepEqual(resumeSections(remote.resume).slice(0,3).map(s=>s.label),['Personal Information','Experience','About Me']);
+});
+
+test('section menus group short actions, keep deletion last/red, name the confirmation and defer iOS mutations until dismissal',()=>{
+ const h=harness(),calls=[];h.mocks['react-native']={...h.mocks['react-native'],Platform:{OS:'ios'}};
+ const actions={label:'Community work',canMoveUp:false,canMoveDown:true,onRename:()=>calls.push('rename'),onMove:d=>calls.push(d),onDuplicate:()=>calls.push('duplicate'),onDelete:()=>calls.push('delete')};
+ h.open('components/editor/SectionControls.tsx',{},'SectionActionsMenu',{actions,onClose:()=>calls.push('close')});
+ const buttons=nodes(h.render()).filter(n=>n.type==='Button').map(n=>text(n));
+ assert.deepEqual(buttons,['Rename','Move Up','Move Down','Duplicate','Delete Section','Cancel']);
+ assert.equal(h.button('Move Up').props.disabled,true);assert.match(h.getText(),/Community work/);
+ h.button('Delete Section').props.onPress();h.render();assert.deepEqual(calls,[]);assert.match(h.getText(),/Delete “Community work”\?/);assert.match(h.getText(),/entire section and all its content/);
+ assert.equal(h.button('Delete Section').props.variant,'destructive');h.button('Delete Section').props.onPress();h.render();assert.deepEqual(calls,[]);
+ const modal=h.find(n=>n.type==='AppSheet');assert.equal(modal.props.visible,false);modal.props.onDismiss();assert.deepEqual(calls,['close','delete']);h.dispose();
+});
+
+test('canceling a custom-section delete leaves the CV intact, while built-in menus omit whole-section deletion/duplication',()=>{
+ const h=harness();let deleted=0,closed=0;
+ const actions={label:'Notes',canMoveUp:true,canMoveDown:false,onRename:()=>{},onMove:()=>{},onDelete:()=>deleted++};
+ h.open('components/editor/SectionControls.tsx',{},'SectionActionsMenu',{actions,onClose:()=>closed++});
+ h.button('Delete Section').props.onPress();h.render();h.button('Cancel').props.onPress();assert.equal(deleted,0);assert.equal(closed,1);h.dispose();
+ const builtin=harness();builtin.open('components/editor/SectionControls.tsx',{},'SectionActionsMenu',{actions:{...actions,label:'Summary',onDelete:undefined},onClose:()=>{}});
+ assert.equal(builtin.button('Delete Section'),undefined);assert.equal(builtin.button('Duplicate'),undefined);assert.equal(builtin.button('Move Down').props.disabled,true);builtin.dispose();
+});
+
+test('deleting a just-created or duplicated custom section closes its editor and saves content/metadata removal before PDF navigation',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());let remote=makeDocument(),mutation=0;
+ const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=>`mutation-${++mutation}`,parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{remote={...remote,revision:remote.revision+1,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
+ t.after(()=>manager.dispose());await manager.restore();
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,flush:()=>manager.flush(),updateResume:v=>manager.update(v)})},'@/components/editor/SectionControls':{AddCustomSectionSheet:'AddCustomSectionSheet',RenameSectionSheet:'RenameSectionSheet',SectionActions:'SectionActions',SectionActionsMenu:'SectionActionsMenu'}});
+ h.button('Add Custom Section').props.onPress();h.render();h.find(n=>n.type==='AddCustomSectionSheet').props.onCreate('Volunteering','itemList');h.render();
+ let opened=h.find(n=>n.type==='SectionEditor');const originalKey=opened.props.section.key;
+ assert.equal(typeof opened.props.actions.onDelete,'function');opened.props.actions.onDuplicate();h.render();
+ opened=h.find(n=>n.type==='SectionEditor');const copyKey=opened.props.section.key;assert.notEqual(copyKey,originalKey);assert.equal(typeof opened.props.actions.onDelete,'function');
+ opened.props.actions.onDelete();await h.pump();h.render();assert.equal(h.find(n=>n.type==='SectionEditor'),undefined);
+ h.find(n=>n.props.accessibilityLabel==='Actions for Volunteering').props.onPress();h.render();h.find(n=>n.type==='SectionActionsMenu').props.actions.onDelete();await h.pump();h.render();
+ assert.deepEqual(manager.snapshot.resume.customSections,{});assert.ok(!remote.resume.sectionMeta.some(meta=>[copyKey.split('.')[1],originalKey.split('.')[1]].includes(meta.key)));
+ await manager.refresh();h.render();assert.equal(h.find(n=>n.props.accessibilityLabel==='Edit Volunteering'),undefined);
+ h.button('Preview PDF').props.onPress();await h.pump();assert.equal(h.calls.at(-1)[1].params.revision,String(remote.revision));assert.deepEqual(remote.resume.customSections,{});
 });

@@ -47,3 +47,5 @@ Resume Content restores section rows and original editors without the intro; pre
 Section editor fields wrap and grow from saved text before focus; Summary stays roomy and iOS keyboard-aware scrolling keeps Done in a fixed header.
 
 - Resume Content shares engine section names/order with export, supports independent entry/custom-section copies, and limits rich-text tools to description fields the PDF renderer supports.
+
+- Resume Content uses one trailing section menu and named whole-section deletion through the existing save flow; item removal stays inside section editors.

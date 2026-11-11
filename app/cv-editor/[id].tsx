@@ -11,9 +11,10 @@ import LucideIcon from "@/lib/icons/LucideIcon";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useCvEditor } from "@/lib/editor/useCvEditor";
 import { SectionEditor } from "@/components/editor/SectionEditor";
-import { AddCustomSectionSheet, RenameSectionSheet, SectionActions } from "@/components/editor/SectionControls";
+import { AddCustomSectionSheet, RenameSectionSheet, SectionActionsMenu } from "@/components/editor/SectionControls";
+import { ResumeSectionList } from "@/components/editor/ResumeSectionList";
 import { JobMatch } from "@/components/editor/JobMatch";
-import { addCustomSection, duplicateCustomSection, moveSection, renameSection, replaceSection, resumeSections, sectionPreview, withSectionMetadata, type EditorSection } from "@/components/editor/sections";
+import { addCustomSection, deleteCustomSection, duplicateCustomSection, moveSection, renameSection, replaceSection, resumeSections, withSectionMetadata, type EditorSection } from "@/components/editor/sections";
 import { isJsonObject, type JsonValue } from "@/lib/tailoring/types";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,7 @@ export default function CvEditorScreen() {
   const [editSection,setEditSection] = useState<"Resume Content"|"Design & Layout">("Resume Content");
   const [matchSection,setMatchSection] = useState<"Overview"|"Keyword Highlights">("Overview");
   const [activeKey,setActiveKey] = useState<string|null>(null);
+  const [menuKey,setMenuKey] = useState<string|null>(null);
   const [renameKey,setRenameKey] = useState<string|null>(null);
   const [addingSection,setAddingSection] = useState(false);
   const pendingSection = useRef<string|null>(null);
@@ -39,13 +41,14 @@ export default function CvEditorScreen() {
   const contentScroll = useRef<ScrollView|null>(null);
   const listOffset = useRef(0);
   const returnOffset = useRef(0);
-  useEffect(() => { mounted.current = true; listOffset.current=0; returnOffset.current=0; setActiveKey(null); setRenameKey(null); setAddingSection(false); pendingSection.current=null; setView("edit"); setEditSection("Resume Content"); setMatchSection("Overview"); setOpeningPreview(false); setActionError(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
+  useEffect(() => { mounted.current = true; listOffset.current=0; returnOffset.current=0; setActiveKey(null); setMenuKey(null); setRenameKey(null); setAddingSection(false); pendingSection.current=null; setView("edit"); setEditSection("Resume Content"); setMatchSection("Overview"); setOpeningPreview(false); setActionError(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
   useEffect(() => { listOffset.current=0;contentScroll.current?.scrollTo({y:0,animated:false}); }, [view,editSection,matchSection]);
   const secondaryTabs = view === "edit" ? ["Resume Content","Design & Layout"] as const : ["Overview","Keyword Highlights"] as const;
   const selectedSecondary = view === "edit" ? editSection : matchSection;
   const insets = useSafeAreaInsets();
   const sections = editor.resume ? resumeSections(editor.resume) : [];
   const section = sections.find(s=>s.key === activeKey);
+  const menuSection = sections.find(s=>s.key === menuKey && !s.personal);
   const document = editor.document;
   const initialMatch = useRef<string | null>(null);
   useEffect(() => {
@@ -85,8 +88,23 @@ export default function CvEditorScreen() {
     const copy = duplicateCustomSection(editor.resume,key);
     if (copy) {editor.updateResume(copy.resume);setActiveKey(copy.key);}
   };
+  const deleteSection = (key:string) => {
+    if (!editor.resume) return;
+    const next=deleteCustomSection(editor.resume,key);
+    if (next === editor.resume) return;
+    editor.updateResume(next);
+    setMenuKey(null);setRenameKey(null);
+    if (activeKey === key) {
+      setActiveKey(null);
+      contentScroll.current?.scrollTo({y:returnOffset.current,animated:false});
+    }
+    if (pendingSection.current === key) pendingSection.current=null;
+    void editor.flush();
+  };
   const actionsFor = (section:EditorSection) => ({
     label:section.label,
+    onRename:()=>setRenameKey(section.key),
+    onDelete:section.custom ? ()=>deleteSection(section.key) : undefined,
     canMoveUp:sections.findIndex(s=>s.key === section.key) > 1,
     canMoveDown:sections.findIndex(s=>s.key === section.key) < sections.length-1,
     onMove:(direction:-1|1)=>{if(editor.resume) editor.updateResume(moveSection(editor.resume,section.key,direction));},
@@ -139,16 +157,7 @@ export default function CvEditorScreen() {
         {editor.problem || actionError ? <View className="gap-3"><Notice tone="error" message={actionError ?? editor.problem ?? "Your edits need syncing."}/>{editor.saveState !== "conflict" ? <Button variant="outline" onPress={()=>{setActionError(null);void editor.flush();}}><Text>Retry saving</Text></Button> : null}</View> : null}
         {editor.saveState === "conflict" ? <View className="gap-3 rounded-2xl border border-border bg-card p-4"><Text className="text-body text-foreground">Choose which version to continue with. Your edits stay on this device until you decide.</Text><Button onPress={()=>void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" onPress={()=>void editor.resolveConflict("server")}><Text>Use the saved version</Text></Button></View> : null}
         {view === "edit" && editSection === "Resume Content" ? <>
-          <View className="overflow-hidden rounded-2xl border border-border bg-card">{sections.map((section,index)=><View key={section.key} className={cn("bg-card px-4 py-3",index > 0 && "border-t border-border")}>
-            <View className="flex-row items-start gap-1">
-              <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${section.label}`} accessibilityHint={`Opens the ${section.label} editor`} onPress={()=>openSection(section.key)} className="min-h-11 flex-1 flex-row items-center gap-2 active:bg-muted">
-                <Text className="flex-1 text-body font-semibold text-foreground">{section.label}</Text><LucideIcon name="ChevronRight" size={16} className="text-muted-foreground"/>
-              </Pressable>
-              {!section.personal ? <><Button variant="ghost" size="icon" accessibilityLabel={`Rename ${section.label}`} onPress={()=>setRenameKey(section.key)}><LucideIcon name="Pencil" size={16} className="text-primary"/></Button><SectionActions {...actionsFor(section)}/></> : null}
-            </View>
-            <Pressable accessibilityRole="button" accessibilityLabel={`Open ${section.label} content`} onPress={()=>openSection(section.key)} className="min-h-6 pb-1"><Text numberOfLines={2} ellipsizeMode="tail" className="text-caption leading-5 text-muted-foreground">{section.hidden ? "Hidden in PDF · " : ""}{sectionPreview(section)}</Text></Pressable>
-          </View>)}</View>
-          <Button variant="outline" className="min-h-12 flex-row gap-2 rounded-xl" onPress={()=>setAddingSection(true)}><LucideIcon name="Plus" size={18} className="text-primary"/><Text className="text-primary">Add Custom Section</Text></Button>
+          <ResumeSectionList sections={sections} onOpen={openSection} onActions={setMenuKey} onAdd={()=>setAddingSection(true)}/>
           <View className="flex-row items-center gap-2"><LucideIcon name="ShieldCheck" size={16} className="text-muted-foreground"/><Text className="flex-1 text-caption leading-5 text-muted-foreground">Your original CV stays unchanged.</Text></View>
         </> : null}
         {view === "edit" && editSection === "Design & Layout" ? <View className="gap-5"><View className="gap-2"><Text accessibilityRole="header" className="text-h4 text-foreground">Design & Layout</Text><Text className="text-body leading-6 text-muted-foreground">Choose how your saved resume appears on the page.</Text></View><View className="gap-4 rounded-2xl border border-border bg-card p-5"><Text className="text-h5 text-foreground">Paper size</Text><Text className="text-body leading-6 text-muted-foreground">Choose A4 or Letter in Resume Preview. Your selection applies to the PDF you view and download.</Text><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="rounded-xl"><Text>{openingPreview ? "Saving your CV…" : "Choose paper size"}</Text></Button></View></View> : null}
@@ -158,6 +167,7 @@ export default function CvEditorScreen() {
       <View className="gap-2 border-t border-border bg-background px-6 pt-4" style={{paddingBottom:Math.max(insets.bottom,16)}}><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="min-h-14 flex-row gap-2 rounded-2xl">{openingPreview ? <ActivityIndicator/> : <LucideIcon name="FileText" size={20} className="text-primary-foreground"/>}<Text>{openingPreview ? "Saving your CV…" : "Preview PDF"}</Text></Button></View>
       {section ? <SectionEditor section={section} saveLabel={statusLabels[editor.saveState]} onChange={(value:JsonValue)=>{if(editor.resume) editor.updateResume(withSectionMetadata(replaceSection(editor.resume,section.key,value)));}} onClose={closeSection} onRename={name=>rename(section.key,name)} actions={actionsFor(section)}/> : null}
     </>}
+    {menuSection ? <SectionActionsMenu key={menuSection.key} actions={actionsFor(menuSection)} onClose={()=>setMenuKey(null)}/> : null}
     {renameKey && sections.some(s=>s.key === renameKey) ? <RenameSectionSheet key={renameKey} name={sections.find(s=>s.key === renameKey)!.label} onSave={name=>{rename(renameKey,name);setRenameKey(null);}} onClose={()=>setRenameKey(null)}/> : null}
     {addingSection || pendingSection.current ? <AddCustomSectionSheet visible={addingSection} onCreate={(name,type)=>{
       if (!editor.resume) return;

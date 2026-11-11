@@ -166,6 +166,17 @@ export function duplicateCustomSection(resume: JsonObject, key: string) {
   return {key:result.key,resume:next};
 }
 
+export function deleteCustomSection(resume: JsonObject, key: string): JsonObject {
+  if (!key.startsWith("customSections.") || !isJsonObject(resume.customSections)) return resume;
+  const field = key.slice("customSections.".length);
+  if (!Object.hasOwn(resume.customSections,field)) return resume;
+  const customSections = {...resume.customSections};
+  delete customSections[field];
+  return {...resume,customSections,...(Array.isArray(resume.sectionMeta) ? {
+    sectionMeta:resume.sectionMeta.filter(meta => !isJsonObject(meta) || (meta.key !== field && meta.key !== key && !(meta.key == null && meta.id === field))),
+  } : {})};
+}
+
 export function replaceSection(resume: JsonObject, key: string, value: JsonValue): JsonObject {
   const [parent, field] = key.split(".");
   return field ? {...resume, [parent]:{...(isJsonObject(resume[parent]) ? resume[parent] : {}), [field]:value}} : {...resume, [key]:value};

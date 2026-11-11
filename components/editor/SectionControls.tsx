@@ -1,30 +1,62 @@
-import { useState } from "react";
-import { Keyboard, ScrollView, View } from "react-native";
+import { useRef, useState } from "react";
+import { Keyboard, Platform, ScrollView, View } from "react-native";
 import { AppSheet } from "@/components/layout/AppSheet";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import LucideIcon from "@/lib/icons/LucideIcon";
 import { EditorTextField } from "./EditorTextField";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { CustomSectionType } from "./sections";
 
 export type SectionActionsProps = {
   label: string;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  onRename: () => void;
   onMove: (direction: -1 | 1) => void;
   onDuplicate?: () => void;
+  onDelete?: () => void;
 };
 
-export function SectionActions({label,canMoveUp,canMoveDown,onMove,onDuplicate}: SectionActionsProps) {
-  const [open,setOpen] = useState(false);
-  return <View className="items-end">
-    <Button variant="ghost" size="icon" accessibilityLabel={`Actions for ${label}`} accessibilityState={{expanded:open}} onPress={()=>{Keyboard.dismiss();setOpen(!open);}}><LucideIcon name="Ellipsis" size={20} className="text-muted-foreground"/></Button>
-    {open ? <View className="min-w-40 gap-1 rounded-xl border border-border bg-card p-1">
-      <Button variant="ghost" disabled={!canMoveUp} className="flex-row justify-start gap-2" onPress={()=>{setOpen(false);onMove(-1);}}><LucideIcon name="ArrowUp" size={16} className="text-foreground"/><Text>Move Up</Text></Button>
-      <Button variant="ghost" disabled={!canMoveDown} className="flex-row justify-start gap-2" onPress={()=>{setOpen(false);onMove(1);}}><LucideIcon name="ArrowDown" size={16} className="text-foreground"/><Text>Move Down</Text></Button>
-      {onDuplicate ? <Button variant="ghost" className="flex-row justify-start gap-2" onPress={()=>{setOpen(false);onDuplicate();}}><LucideIcon name="Copy" size={16} className="text-foreground"/><Text>Duplicate section</Text></Button> : null}
-    </View> : null}
-  </View>;
+export function SectionActions({label,onPress}: {label:string;onPress:()=>void}) {
+  return <Button variant="ghost" size="icon" className="h-11 w-11 rounded-xl" accessibilityLabel={`Actions for ${label}`} accessibilityHint="Rename, reorder and manage this section" onPress={()=>{Keyboard.dismiss();onPress();}}><LucideIcon name="Ellipsis" size={21} className="text-muted-foreground"/></Button>;
+}
+
+export function SectionActionsMenu({actions,onClose}: {actions:SectionActionsProps;onClose:()=>void}) {
+  const [visible,setVisible] = useState(true);
+  const [confirming,setConfirming] = useState(false);
+  const pending = useRef<(()=>void)|null>(null);
+  const insets = useSafeAreaInsets();
+  // iOS must dismiss this modal before opening another sheet or removing an editor.
+  const finish = () => {const action=pending.current;pending.current=null;onClose();action?.();};
+  const dismiss = (action?:()=>void) => {
+    pending.current=action ?? null;
+    setVisible(false);
+    if (Platform.OS !== "ios") finish();
+  };
+  const itemClass="h-auto native:h-auto min-h-12 flex-row justify-start gap-3 rounded-xl px-4 py-3";
+  return <AppSheet visible={visible} presentation="actions" onClose={()=>dismiss()} onDismiss={finish}>
+    <View className="max-h-full overflow-hidden rounded-t-3xl border border-border bg-card px-4 pt-5" style={{paddingBottom:Math.max(insets.bottom,16)}}>
+      <ScrollView keyboardShouldPersistTaps="handled" bounces={false} contentContainerClassName="gap-3 pb-4">
+        {confirming ? <View className="gap-5 px-2 pb-2">
+          <Text accessibilityRole="header" className="text-h4 text-foreground">Delete “{actions.label}”?</Text>
+          <Text className="text-body leading-6 text-muted-foreground">This removes the entire section and all its content from this tailored CV.</Text>
+          <Button variant="destructive" className="min-h-12 rounded-xl" onPress={()=>dismiss(actions.onDelete)}><Text>Delete Section</Text></Button>
+        </View> : <>
+          <View className="gap-1 px-4 pb-2"><Text className="text-caption text-muted-foreground">Section actions</Text><Text accessibilityRole="header" className="text-h4 text-foreground">{actions.label}</Text></View>
+          <View>
+            <Button variant="ghost" className={itemClass} onPress={()=>dismiss(actions.onRename)}><LucideIcon name="Pencil" size={19} className="text-foreground"/><Text className="text-body text-foreground">Rename</Text></Button>
+            <View className="my-1 border-t border-border"/>
+            <Button variant="ghost" disabled={!actions.canMoveUp} className={itemClass} onPress={()=>dismiss(()=>actions.onMove(-1))}><LucideIcon name="ArrowUp" size={19} className="text-foreground"/><Text className="text-body text-foreground">Move Up</Text></Button>
+            <Button variant="ghost" disabled={!actions.canMoveDown} className={itemClass} onPress={()=>dismiss(()=>actions.onMove(1))}><LucideIcon name="ArrowDown" size={19} className="text-foreground"/><Text className="text-body text-foreground">Move Down</Text></Button>
+            {actions.onDuplicate ? <Button variant="ghost" className={itemClass} onPress={()=>dismiss(actions.onDuplicate)}><LucideIcon name="Copy" size={19} className="text-foreground"/><Text className="text-body text-foreground">Duplicate</Text></Button> : null}
+            {actions.onDelete ? <><View className="my-2 border-t border-border"/><Button variant="ghost" className={itemClass} onPress={()=>setConfirming(true)}><LucideIcon name="Trash2" size={19} className="text-destructive"/><Text className="text-body font-medium text-destructive">Delete Section</Text></Button></> : null}
+          </View>
+        </>}
+      </ScrollView>
+      <Button variant="secondary" className="min-h-12 rounded-xl" onPress={()=>dismiss()}><Text>Cancel</Text></Button>
+    </View>
+  </AppSheet>;
 }
 
 export function RenameSectionForm({name,onSave,onCancel}: {name:string;onSave:(name:string)=>void;onCancel:()=>void}) {

@@ -103,3 +103,59 @@ test('the shared rich editing document safely embeds saved text and has syntacti
  const scripts=[...document.matchAll(/<script>([\s\S]*?)<\/script>/g)];assert.equal(scripts.length,1);assert.doesNotThrow(()=>new Function(scripts[0][1]));assert.ok(!document.includes(payload));
  assert.match(document,/Display Text/);assert.match(document,/URL/);assert.match(document,/contenteditable="true"/);
 });
+
+test('delete removes every matching custom metadata record, preserves other sections, and cannot delete built-ins',()=>{
+ let resume=sections.withSectionMetadata(original());
+ resume.sectionMeta.push({id:'legacy-meta',key:'customSections.research',displayName:'Legacy research',order:99}, {id:'external',key:'other',displayName:'Keep metadata',order:100,engineField:true});
+ const before=clone(resume),deleted=sections.deleteCustomSection(resume,'customSections.research');
+ assert.equal(deleted.customSections.research,undefined);
+ assert.ok(deleted.sectionMeta.every(meta=>!['research','customSections.research'].includes(meta.key)));
+ assert.deepEqual(deleted.workExperience,before.workExperience);assert.equal(deleted.summary,before.summary);
+ assert.deepEqual(deleted.sectionMeta.find(meta=>meta.id==='external'),before.sectionMeta.at(-1));
+ assert.deepEqual(resume,before);
+ assert.equal(sections.deleteCustomSection(resume,'summary'),resume);
+ assert.equal(sections.deleteCustomSection(resume,'customSections.missing'),resume);
+ assert.deepEqual(sections.resumeSections(deleted).filter(s=>s.custom),[]);
+});
+
+test('new and duplicated text, item and skill sections can all be deleted without deleting the source or formatting',()=>{
+ for(const type of ['text','itemList','stringList']) {
+  const added=sections.addCustomSection(original(),'New '+type,type);
+  const copy=sections.duplicateCustomSection(added.resume,added.key);
+  let removed=sections.deleteCustomSection(copy.resume,copy.key);
+  assert.ok(sections.resumeSections(removed).some(s=>s.key===added.key));
+  assert.ok(!sections.resumeSections(removed).some(s=>s.key===copy.key));
+  removed=sections.deleteCustomSection(removed,added.key);
+  assert.deepEqual(removed.customSections,original().customSections);
+  assert.equal(removed.workExperience[0].description[0],html);
+  assert.ok(!removed.sectionMeta.some(meta=>meta.key===added.key.split('.')[1]||meta.key===copy.key.split('.')[1]));
+ }
+});
+
+test('a deletion during an older save survives both acknowledgements and reopening, and is the next PDF revision',async()=>{
+ let remote={tailoring_id:'saved-cv',revision:4,updated_at:'now',resume:sections.withSectionMetadata(original()),confirmed_skills:[],job:{title:'Engineer',company:null,description:'Job'},analysis:null},stored=null,counter=0,release;
+ const requests=[];
+ const deps={read:async()=>stored,write:async value=>{stored=value;},uuid:()=>`mutation-${++counter}`,parseDocument:v=>v,load:async()=>clone(remote),save:async body=>{requests.push(clone(body));if(requests.length===1)await new Promise(resolve=>{release=resolve;});assert.equal(body.expected_revision,remote.revision);remote={...remote,revision:remote.revision+1,resume:clone(body.resume)};return clone(remote);},analyze:async()=>null,onState:()=>{}};
+ const session=new CvEditorSession(deps);await session.restore();
+ session.update(sections.renameSection(session.snapshot.resume,'customSections.research','Volunteering'));
+ const oldSave=session.flush();while(!release)await new Promise(resolve=>setImmediate(resolve));
+ const deleted=sections.deleteCustomSection(session.snapshot.resume,'customSections.research');session.update(deleted);
+ const exportSave=session.flush();release();await oldSave;const forPdf=await exportSave;
+ assert.equal(forPdf.revision,6);assert.equal(requests.length,2);
+ assert.ok(requests[0].resume.customSections.research);assert.equal(requests[1].resume.customSections.research,undefined);
+ assert.ok(!requests[1].resume.sectionMeta.some(meta=>meta.key==='research'));
+ assert.equal(session.snapshot.resume.customSections.research,undefined);session.dispose();
+ const reopened=new CvEditorSession(deps);await reopened.restore();
+ assert.equal(reopened.snapshot.resume.customSections.research,undefined);assert.deepEqual(reopened.snapshot.resume,deleted);
+ assert.ok(!sections.resumeSections(reopened.snapshot.resume).some(s=>s.label==='Volunteering'));reopened.dispose();
+});
+
+test('an ambiguous delete retains the exact deletion mutation for safe retry and never restores the section locally',async()=>{
+ let remote={tailoring_id:'saved-cv',revision:4,updated_at:'now',resume:sections.withSectionMetadata(original()),confirmed_skills:[],job:{title:'Engineer',company:null,description:'Job'},analysis:null},stored=null,counter=0,fail=true;
+ const requests=[];
+ const deps={read:async()=>stored,write:async value=>{stored=value;},uuid:()=>`mutation-${++counter}`,parseDocument:v=>v,load:async()=>clone(remote),save:async body=>{requests.push(clone(body));if(fail)throw Error('Connection lost');remote={...remote,revision:remote.revision+1,resume:clone(body.resume)};return clone(remote);},analyze:async()=>null,onState:()=>{}};
+ const session=new CvEditorSession(deps);await session.restore();session.update(sections.deleteCustomSection(session.snapshot.resume,'customSections.research'));
+ assert.equal(await session.flush(),null);assert.equal(session.snapshot.resume.customSections.research,undefined);
+ assert.equal(JSON.parse(stored).resume.customSections.research,undefined);assert.equal(JSON.parse(stored).pending.resume.customSections.research,undefined);
+ fail=false;await session.flush();assert.deepEqual(requests[1],requests[0]);assert.equal(remote.resume.customSections.research,undefined);session.dispose();
+});

@@ -10,7 +10,7 @@ import { readableLabel } from "@/components/tailoring/ReviewContent";
 import { duplicateListItem, editorMetadata, entryTemplate, sectionSummary, type EditorSection } from "./sections";
 
 import { RichTextField } from "./RichTextField";
-import { RenameSectionForm, SectionActions, type SectionActionsProps } from "./SectionControls";
+import { RenameSectionForm, SectionActions, SectionActionsMenu, type SectionActionsProps } from "./SectionControls";
 
 const CaretContext = createContext<((y:number)=>void)|undefined>(undefined);
 
@@ -63,7 +63,7 @@ function ListEditor({ value, onChange, field, styles, richDescriptions = false }
           <Button variant="ghost" className="flex-row justify-start gap-2" onPress={()=>{const copy=duplicateListItem(value,index,styles);onChange(copy.value,copy.styles);setMenu(null);}}><LucideIcon name="Copy" size={16} className="text-foreground"/><Text>Duplicate</Text></Button>
           <Button variant="ghost" className="flex-row justify-start gap-2" disabled={index === 0} onPress={()=>{move(index,-1);setMenu(null);}}><LucideIcon name="ArrowUp" size={16} className="text-foreground"/><Text>Move Up</Text></Button>
           <Button variant="ghost" className="flex-row justify-start gap-2" disabled={index === value.length-1} onPress={()=>{move(index,1);setMenu(null);}}><LucideIcon name="ArrowDown" size={16} className="text-foreground"/><Text>Move Down</Text></Button>
-          <Button variant="ghost" className="flex-row justify-start gap-2" onPress={()=>{Keyboard.dismiss();setMenu(null);setRemoving(index);}}><LucideIcon name="Trash2" size={16} className="text-destructive"/><Text className="text-destructive">Remove</Text></Button>
+          <Button variant="ghost" className="flex-row justify-start gap-2" onPress={()=>{Keyboard.dismiss();setMenu(null);setRemoving(index);}}><LucideIcon name="Trash2" size={16} className="text-destructive"/><Text className="text-destructive">Remove item</Text></Button>
         </View> : null}
       </View>
       {removing === index ? <View className="gap-3 rounded-xl bg-destructive/5 p-3"><Text className="text-body text-foreground">Remove this entry from your tailored CV?</Text><View className="flex-row gap-3"><Button variant="secondary" className="flex-1" onPress={()=>setRemoving(null)}><Text>Keep</Text></Button><Button variant="destructive" className="flex-1" onPress={()=>remove(index)}><Text>Remove</Text></Button></View></View> : null}
@@ -99,11 +99,12 @@ export function SectionEditor({section,onChange,onClose,saveLabel,onRename,actio
   section:EditorSection;onChange:(value:JsonValue)=>void;onClose:()=>void;saveLabel:string;onRename:(name:string)=>void;actions:SectionActionsProps;
 }) {
   const [renaming,setRenaming] = useState(false);
+  const [showActions,setShowActions] = useState(false);
   const scroll = useRef<ScrollView>(null);
   const viewport = useRef<View>(null);
   const offset = useRef(0);
   const window = useWindowDimensions();
-  useEffect(()=>{setRenaming(false);offset.current=0;scroll.current?.scrollTo({y:0,animated:false});},[section.key]);
+  useEffect(()=>{setRenaming(false);setShowActions(false);offset.current=0;scroll.current?.scrollTo({y:0,animated:false});},[section.key]);
   const keepCaretVisible = (y:number) => {
     viewport.current?.measureInWindow((_x,top,_width,height)=>{
       const bottom = Math.min(Keyboard.metrics()?.screenY ?? window.height,top+height);
@@ -114,15 +115,17 @@ export function SectionEditor({section,onChange,onClose,saveLabel,onRename,actio
   const richDescriptions = /^(workExperience|experience|personalProjects|projects)$/.test(section.key) || (section.custom && section.sectionType === "itemList");
   return <AppSheet visible onClose={onClose}>
     <View className="min-h-16 flex-row items-center justify-between gap-3 border-b border-border px-5 py-3">
-      <View className="flex-1 gap-1"><View className="flex-row items-center"><Text accessibilityRole="header" className="flex-shrink text-h4 text-foreground">{section.label}</Text>{!section.personal ? <Button variant="ghost" size="icon" accessibilityLabel={`Rename ${section.label}`} onPress={()=>{Keyboard.dismiss();setRenaming(!renaming);}}><LucideIcon name="Pencil" size={17} className="text-primary"/></Button> : null}</View><Text accessibilityLiveRegion="polite" className="text-caption text-muted-foreground">{saveLabel}</Text></View>
+      <View className="min-w-0 flex-1 gap-1"><Text accessibilityRole="header" numberOfLines={2} className="text-h4 text-foreground">{section.label}</Text><Text accessibilityLiveRegion="polite" className="text-caption text-muted-foreground">{saveLabel}</Text></View>
+      {!section.personal ? <SectionActions label={section.label} onPress={()=>setShowActions(true)}/> : null}
       <Button variant="ghost" onPress={()=>{Keyboard.dismiss();onClose();}}><Text className="text-primary">Done</Text></Button>
     </View>
-    {!section.personal ? <View className="bg-background px-5"><SectionActions {...actions}/>{renaming ? <RenameSectionForm name={section.label} onSave={name=>{onRename(name);setRenaming(false);}} onCancel={()=>setRenaming(false)}/> : null}</View> : null}
+    {renaming ? <View className="bg-background px-5 pt-4"><RenameSectionForm name={section.label} onSave={name=>{onRename(name);setRenaming(false);}} onCancel={()=>setRenaming(false)}/></View> : null}
     <KeyboardAvoidingView enabled={Platform.OS !== "ios"} behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
       <View ref={viewport} className="flex-1"><ScrollView ref={scroll} onScroll={event=>{offset.current=event.nativeEvent.contentOffset.y;}} scrollEventThrottle={16} className="flex-1" automaticallyAdjustKeyboardInsets={Platform.OS === "ios"} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} contentContainerClassName="gap-6 px-5 pb-12 pt-6">
         {section.hidden ? <Text className="text-caption text-muted-foreground">This section is currently hidden in your PDF.</Text> : null}
         <CaretContext.Provider value={keepCaretVisible}><ValueEditor key={section.key} value={section.value} onChange={onChange} field={section.key} richDescriptions={richDescriptions}/></CaretContext.Provider>
       </ScrollView></View>
     </KeyboardAvoidingView>
+    {showActions ? <SectionActionsMenu actions={{...actions,onRename:()=>setRenaming(true)}} onClose={()=>setShowActions(false)}/> : null}
   </AppSheet>;
 }
