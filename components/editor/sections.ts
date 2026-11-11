@@ -40,7 +40,8 @@ export function sectionPreview(section: EditorSection): string {
   const hint = /personalInfo/i.test(key) ? "Add your contact details" : /summary/i.test(key) ? "Add a short summary" : section.custom && section.sectionType === "text" ? "Add a paragraph" : section.custom && section.sectionType === "stringList" ? "Add your first skill" : `Add your first ${noun}`;
   if (key === "additional" && isJsonObject(section.value)) {
     const count = Object.values(section.value).reduce<number>((n,v) => n+(Array.isArray(v) ? v.length : 0),0);
-    return count ? `${count} skills & other details` : "Add your skills";
+    const hasLanguages = Array.isArray(section.value.languages) && section.value.languages.some(value => typeof value === "string" && !!value.trim());
+    return hasLanguages ? `Languages included · ${count} items` : count ? `${count} skills & other details` : "Add your skills";
   }
   const value = isJsonObject(section.value) && Array.isArray(section.value.items) ? section.value.items : isJsonObject(section.value) && Array.isArray(section.value.strings) ? section.value.strings : section.value;
   if (Array.isArray(value)) return value.length ? `${value.length} ${value.length === 1 ? noun : noun === "entry" ? "entries" : noun === "education entry" ? "education entries" : `${noun}s`}` : hint;

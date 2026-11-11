@@ -116,9 +116,10 @@ export function SectionEditor({section,onChange,onClose,saveLabel,onRename,actio
   return <AppSheet visible onClose={onClose}>
     <View className="min-h-16 flex-row items-center justify-between gap-3 border-b border-border px-5 py-3">
       <View className="min-w-0 flex-1 gap-1"><Text accessibilityRole="header" numberOfLines={2} className="text-h4 text-foreground">{section.label}</Text><Text accessibilityLiveRegion="polite" className="text-caption text-muted-foreground">{saveLabel}</Text></View>
-      {!section.personal ? <SectionActions label={section.label} onPress={()=>setShowActions(true)}/> : null}
+      {!section.personal && !section.custom ? <SectionActions label={section.label} onPress={()=>setShowActions(true)}/> : null}
       <Button variant="ghost" onPress={()=>{Keyboard.dismiss();onClose();}}><Text className="text-primary">Done</Text></Button>
     </View>
+    {section.custom ? <View className="items-end bg-background px-5 pb-2"><SectionActions label={section.label} showLabel onPress={()=>setShowActions(true)}/></View> : null}
     {renaming ? <View className="bg-background px-5 pt-4"><RenameSectionForm name={section.label} onSave={name=>{onRename(name);setRenaming(false);}} onCancel={()=>setRenaming(false)}/></View> : null}
     <KeyboardAvoidingView enabled={Platform.OS !== "ios"} behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1">
       <View ref={viewport} className="flex-1"><ScrollView ref={scroll} onScroll={event=>{offset.current=event.nativeEvent.contentOffset.y;}} scrollEventThrottle={16} className="flex-1" automaticallyAdjustKeyboardInsets={Platform.OS === "ios"} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} contentContainerClassName="gap-6 px-5 pb-12 pt-6">

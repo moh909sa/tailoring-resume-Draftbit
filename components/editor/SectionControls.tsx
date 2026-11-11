@@ -18,8 +18,11 @@ export type SectionActionsProps = {
   onDelete?: () => void;
 };
 
-export function SectionActions({label,onPress}: {label:string;onPress:()=>void}) {
-  return <Button variant="ghost" size="icon" className="h-11 w-11 rounded-xl" accessibilityLabel={`Actions for ${label}`} accessibilityHint="Rename, reorder and manage this section" onPress={()=>{Keyboard.dismiss();onPress();}}><LucideIcon name="Ellipsis" size={21} className="text-muted-foreground"/></Button>;
+export function SectionActions({label,onPress,showLabel = false}: {label:string;onPress:()=>void;showLabel?:boolean}) {
+  return <Button variant="ghost" size={showLabel ? "default" : "icon"} className={showLabel ? "h-auto native:h-auto min-h-11 min-w-0 max-w-full flex-row gap-2 rounded-xl px-3 py-2" : "h-11 w-11 shrink-0 rounded-xl"} accessibilityLabel={`Actions for ${label}`} accessibilityHint="Rename, reorder and manage this section" onPress={()=>{Keyboard.dismiss();onPress();}}>
+    {showLabel ? <Text className="flex-shrink text-caption font-medium text-foreground web:whitespace-normal">Section actions</Text> : null}
+    <LucideIcon name="Ellipsis" size={21} className="shrink-0 text-muted-foreground"/>
+  </Button>;
 }
 
 export function SectionActionsMenu({actions,onClose}: {actions:SectionActionsProps;onClose:()=>void}) {

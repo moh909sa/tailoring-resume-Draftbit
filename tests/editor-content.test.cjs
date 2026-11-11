@@ -159,3 +159,38 @@ test('an ambiguous delete retains the exact deletion mutation for safe retry and
  assert.equal(JSON.parse(stored).resume.customSections.research,undefined);assert.equal(JSON.parse(stored).pending.resume.customSections.research,undefined);
  fail=false;await session.flush();assert.deepEqual(requests[1],requests[0]);assert.equal(remote.resume.customSections.research,undefined);session.dispose();
 });
+
+test('Skills identifies Languages when populated, keeps empty-language hints accurate, and never edits the saved data',()=>{
+ const resume=original(),before=clone(resume);
+ const row=sections.resumeSections(resume).find(s=>s.key==='additional');
+ assert.match(sections.sectionPreview(row),/Languages/);assert.deepEqual(resume,before);
+ for(const languages of [[],['','  '],null]) {
+   const empty={...resume,additional:{technicalSkills:['TypeScript'],languages}};
+   assert.doesNotMatch(sections.sectionPreview(sections.resumeSections(empty).find(s=>s.key==='additional')),/Languages/);
+ }
+});
+
+test('create, rename, move, duplicate and delete only the copy; reopening keeps the named original and its content for every custom type',async()=>{
+ for(const type of ['text','itemList','stringList']) {
+   let remote={tailoring_id:'saved-cv',revision:4,updated_at:'now',resume:sections.withSectionMetadata(original()),confirmed_skills:[],job:{title:'Engineer',company:null,description:'Job'},analysis:null},stored=null,counter=0;
+   const deps={read:async()=>stored,write:async raw=>{stored=raw;},uuid:()=>`mutation-${++counter}`,parseDocument:v=>v,load:async()=>clone(remote),save:async body=>{assert.equal(body.expected_revision,remote.revision);remote={...remote,revision:remote.revision+1,resume:clone(body.resume)};return clone(remote);},analyze:async()=>null,onState:()=>{}};
+   const session=new CvEditorSession(deps);await session.restore();
+   const added=sections.addCustomSection(session.snapshot.resume,'New custom section',type);
+   const content=type==='text'?{sectionType:type,text:'Complete original paragraph'}:type==='itemList'?{sectionType:type,items:[{id:101,title:'Original item',description:[html]}]}:{sectionType:type,strings:['English','Arabic']};
+   session.update(sections.replaceSection(added.resume,added.key,content));await session.flush();
+   const name='Community leadership and professional development';
+   session.update(sections.renameSection(session.snapshot.resume,added.key,name));await session.flush();
+   const beforeMove=sections.resumeSections(session.snapshot.resume).findIndex(s=>s.key===added.key);
+   session.update(sections.moveSection(session.snapshot.resume,added.key,-1));await session.flush();
+   const originalPosition=sections.resumeSections(session.snapshot.resume).findIndex(s=>s.key===added.key);assert.equal(originalPosition,beforeMove-1);
+   const copy=sections.duplicateCustomSection(session.snapshot.resume,added.key);session.update(copy.resume);await session.flush();
+   assert.equal(sections.resumeSections(session.snapshot.resume)[originalPosition+1].key,copy.key);
+   session.update(sections.deleteCustomSection(session.snapshot.resume,copy.key));await session.flush();session.dispose();
+   const reopened=new CvEditorSession(deps);await reopened.restore();
+   const rows=sections.resumeSections(reopened.snapshot.resume),kept=rows.find(s=>s.key===added.key);
+   assert.equal(kept.label,name);assert.deepEqual(kept.value,content);assert.equal(rows.findIndex(s=>s.key===added.key),originalPosition);
+   assert.equal(rows.some(s=>s.key===copy.key),false);assert.equal(reopened.snapshot.resume.customSections[copy.key.split('.')[1]],undefined);
+   assert.ok(!reopened.snapshot.resume.sectionMeta.some(meta=>meta.key===copy.key.split('.')[1]));
+   assert.deepEqual(reopened.snapshot.resume.customSections.research,original().customSections.research);reopened.dispose();
+ }
+});

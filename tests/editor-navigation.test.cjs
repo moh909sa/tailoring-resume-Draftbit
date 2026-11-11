@@ -667,3 +667,24 @@ test('deleting a just-created or duplicated custom section closes its editor and
  await manager.refresh();h.render();assert.equal(h.find(n=>n.props.accessibilityLabel==='Edit Volunteering'),undefined);
  h.button('Preview PDF').props.onPress();await h.pump();assert.equal(h.calls.at(-1)[1].params.revision,String(remote.revision));assert.deepEqual(remote.resume.customSections,{});
 });
+
+test('custom titles get two lines and retain separate edit/action targets; the custom editor labels its existing actions',()=>{
+ const h=harness();let opened=null,managed=null;
+ const {resumeSections}=load('components/editor/sections.ts',{'@/components/tailoring/ReviewContent':{readableLabel:key=>key}});
+ const name='Community leadership and professional development';
+ const resume={...makeDocument().resume,customSections:{community:{sectionType:'text',text:'Original custom paragraph'}},sectionMeta:[...makeDocument().resume.sectionMeta,{id:'community',key:'community',displayName:name,sectionType:'text',isDefault:false,isVisible:true,order:5}]};
+ const sections=resumeSections(resume),custom=sections.find(s=>s.custom);
+ h.open('components/editor/ResumeSectionList.tsx',{},'ResumeSectionList',{sections,onOpen:key=>opened=key,onActions:key=>managed=key,onAdd:()=>{}});
+ const row=h.find(n=>n.props.accessibilityLabel===`Edit ${name}`),action=h.find(n=>n.props.accessibilityLabel===`Actions for ${name}`);
+ assert.equal(nodes(row).find(n=>n.type==='Text'&&text(n)===name).props.numberOfLines,2);
+ assert.equal(nodes(h.find(n=>n.props.accessibilityLabel==='Edit Summary')).find(n=>n.type==='Text'&&text(n)==='Summary').props.numberOfLines,1);
+ assert.ok(!nodes(row).includes(action),'the actions target must stay outside the edit pressable');
+ assert.match(action.props.className,/h-11 w-11 shrink-0/);
+ action.props.onPress();assert.equal(managed,custom.key);assert.equal(opened,null);
+ row.props.onPress();assert.equal(opened,custom.key);h.dispose();
+ const editor=harness();const actions={label:name,canMoveUp:true,canMoveDown:false,onRename:()=>{},onMove:()=>{},onDuplicate:()=>{},onDelete:()=>{}};
+ editor.open('components/editor/SectionEditor.tsx',{},'SectionEditor',{section:custom,onChange:()=>{},onClose:()=>{},saveLabel:'All changes saved',onRename:()=>{},actions});
+ const label=editor.button('Section actions');assert.ok(label);assert.equal(label.props.accessibilityLabel,`Actions for ${name}`);
+ label.props.onPress();editor.render();const menu=editor.find(n=>typeof n.type==='function'&&n.type.name==='SectionActionsMenu');
+ assert.equal(menu.props.actions.label,name);assert.equal(menu.props.actions.onDelete,actions.onDelete);editor.dispose();
+});
