@@ -17,7 +17,7 @@ import Icon from "@/lib/icons/LucideIcon";
 type Preview = { ownerId: string; id: string; layout: EditorLayout | undefined; requestedRevision: number | undefined; title: string; pdf: EditorPdf };
 
 export default function CvPdfPreview() {
-  const params = useLocalSearchParams<{ id?: string | string[]; revision?: string | string[]; returnTo?: string }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; revision?: string | string[]; returnTo?: string; returnToEditor?: string }>();
   const route = readEditorRoute(params);
   const id = route.id;
   const expectedRevision = route.revision;
@@ -40,6 +40,7 @@ export default function CvPdfPreview() {
   };
   const editResume = () => {
     if (!id || routeError || sharing) return;
+    if(params.returnToEditor === "1" && router.canGoBack()){router.back();return;}
     router.push({ pathname: "/cv-editor/[id]", params: { id, returnTo: "preview", ...(params.returnTo === "library" ? {previewReturnTo:"library"} : {}) } });
   };
 

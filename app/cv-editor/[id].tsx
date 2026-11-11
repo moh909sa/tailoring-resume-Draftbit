@@ -13,6 +13,10 @@ import { useCvEditor } from "@/lib/editor/useCvEditor";
 import { SectionEditor } from "@/components/editor/SectionEditor";
 import { AddCustomSectionSheet, RenameSectionSheet, SectionActionsMenu } from "@/components/editor/SectionControls";
 import { ResumeSectionList } from "@/components/editor/ResumeSectionList";
+import { EditorControlsPanel } from "@/components/editor/EditorControlsPanel";
+import { CvPreviewSurface } from "@/components/editor/CvPreviewSurface";
+import { useLivePreview } from "@/lib/editor/useLivePreview";
+import { shareEditorPdf } from "@/lib/editor/pdf";
 import { DesignLayout } from "@/components/editor/DesignLayout";
 import { JobMatch } from "@/components/editor/JobMatch";
 import { addCustomSection, deleteCustomSection, duplicateCustomSection, moveSection, renameSection, replaceSection, resumeSections, withSectionMetadata, type EditorSection } from "@/components/editor/sections";
@@ -35,6 +39,14 @@ export default function CvEditorScreen() {
   const [renameKey,setRenameKey] = useState<string|null>(null);
   const [addingSection,setAddingSection] = useState(false);
   const pendingSection = useRef<string|null>(null);
+  const [panelOpen,setPanelOpen]=useState(false);
+  const [stageHeight,setStageHeight]=useState(440);
+  const [sharing,setSharing]=useState(false);
+  const [viewError,setViewError]=useState(false);
+  const designScroll=useRef<ScrollView|null>(null);
+  const designOffset=useRef(0);
+  const matchScroll=useRef<ScrollView|null>(null);
+  const matchOffset=useRef(0);
   const [openingPreview,setOpeningPreview] = useState(false);
   const [actionError,setActionError] = useState<string|null>(null);
   const previewGeneration = useRef(0);
@@ -42,8 +54,7 @@ export default function CvEditorScreen() {
   const contentScroll = useRef<ScrollView|null>(null);
   const listOffset = useRef(0);
   const returnOffset = useRef(0);
-  useEffect(() => { mounted.current = true; listOffset.current=0; returnOffset.current=0; setActiveKey(null); setMenuKey(null); setRenameKey(null); setAddingSection(false); pendingSection.current=null; setView("edit"); setEditSection("Resume Content"); setMatchSection("Overview"); setOpeningPreview(false); setActionError(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
-  useEffect(() => { listOffset.current=0;contentScroll.current?.scrollTo({y:0,animated:false}); }, [view,editSection,matchSection]);
+  useEffect(() => { mounted.current = true; listOffset.current=0; returnOffset.current=0; setActiveKey(null); setPanelOpen(false); setSharing(false); setViewError(false); designOffset.current=0; matchOffset.current=0; setMenuKey(null); setRenameKey(null); setAddingSection(false); pendingSection.current=null; setView("edit"); setEditSection("Resume Content"); setMatchSection("Overview"); setOpeningPreview(false); setActionError(null); return () => { mounted.current = false; previewGeneration.current++; }; }, [session?.user.id, id]);
   const secondaryTabs = view === "edit" ? ["Resume Content","Design & Layout"] as const : ["Overview","Keyword Highlights"] as const;
   const selectedSecondary = view === "edit" ? editSection : matchSection;
   const insets = useSafeAreaInsets();
@@ -51,6 +62,10 @@ export default function CvEditorScreen() {
   const section = sections.find(s=>s.key === activeKey);
   const menuSection = sections.find(s=>s.key === menuKey && !s.personal);
   const document = editor.document;
+  const live=useLivePreview(session?.user.id && document && !editor.error && !editor.routeError ? {ownerId:session.user.id,id:document.tailoring_id,revision:document.revision,ready:editor.saveState === "saved"} : null);
+  useEffect(()=>{setViewError(false);},[live.pdf?.uri]);
+  const previewCurrent=!!live.pdf && live.pdf.revision===document?.revision && editor.saveState === "saved" && !live.updating && !live.error && !viewError;
+
   const initialMatch = useRef<string | null>(null);
   useEffect(() => {
     if (view !== "match" || !document || editor.analysis || editor.analysisLoading || editor.saveState !== "saved" || initialMatch.current === document.tailoring_id) return;
@@ -58,11 +73,12 @@ export default function CvEditorScreen() {
     void editor.refreshAnalysis();
   }, [view, document, editor.analysis, editor.analysisLoading, editor.saveState, editor.refreshAnalysis]);
   const leave = () => {
-    if (returningToPreview && !editor.error && !editor.routeError) { void preview(); return; }
+    if (returningToPreview && !editor.error && !editor.routeError) { void preview(true); return; }
     previewGeneration.current++;Keyboard.dismiss();void editor.flush();router.replace("/(tabs)/library/tailored-cvs");
   };
   const openSection = (key:string) => {
     returnOffset.current=view === "edit" && editSection === "Resume Content" ? listOffset.current : 0;
+    setPanelOpen(true);
     setView("edit");
     setEditSection("Resume Content");
     const found = sections.find(s=>key === "skills" ? /^(additional|technicalSkills|professionalSkills|skills)$/.test(s.key) : key === "workExperience" ? /workExperience|experience$/.test(s.key) : s.key === key);
@@ -113,7 +129,7 @@ export default function CvEditorScreen() {
   });
   const rename = (key:string,name:string) => {if(editor.resume) editor.updateResume(renameSection(editor.resume,key,name));};
   const openCreatedSection = () => {if(pendingSection.current) {setActiveKey(pendingSection.current);pendingSection.current=null;}};
-  const preview = async () => {
+  const preview = async (exitToOrigin=false) => {
     if(openingPreview) return;
     const generation = ++previewGeneration.current;
     setOpeningPreview(true);setActionError(null);Keyboard.dismiss();
@@ -125,47 +141,75 @@ export default function CvEditorScreen() {
       const saved = await editor.flush();
       if (!mounted.current || generation !== previewGeneration.current) return;
       if(saved) {
-        if (returningToPreview && router.canGoBack()) router.dismissTo({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),...(previewReturnTo === "library" ? {returnTo:"library"} : {})}});
-        else if (returningToPreview) router.replace({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),...(previewReturnTo === "library" ? {returnTo:"library"} : {})}});
-        else router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision)}});
+        if (exitToOrigin && returningToPreview && router.canGoBack()) router.dismissTo({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),...(previewReturnTo === "library" ? {returnTo:"library"} : {})}});
+        else if (exitToOrigin && returningToPreview) router.replace({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),...(previewReturnTo === "library" ? {returnTo:"library"} : {})}});
+        else router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),returnToEditor:"1"}});
       }
       else setActionError("Save your latest changes before opening the PDF preview. Your edits are kept on this device.");
     } catch(error) {if (mounted.current && generation === previewGeneration.current) setActionError(error instanceof Error ? error.message : "The CV could not be saved. Please try again.");}
     finally {if (mounted.current && generation === previewGeneration.current) setOpeningPreview(false);}
   };
+  const download=async()=>{
+    const current=editor.getSnapshot?.() ?? editor;
+    if(!live.pdf || sharing || !previewCurrent || current.saveState!=="saved" || live.pdf.revision!==current.document?.revision)return;
+    const generation=previewGeneration.current;
+    const release=live.retain(live.pdf);
+    setSharing(true);setActionError(null);
+    try{await shareEditorPdf(live.pdf);}
+    catch(error){if(mounted.current&&generation===previewGeneration.current)setActionError(error instanceof Error?error.message:"Your PDF could not be downloaded. Try again.");}
+    finally{release();if(mounted.current&&generation===previewGeneration.current)setSharing(false);}
+  };
   return <AppScreen>
     <View className="min-h-16 flex-row items-center gap-3 px-5 py-3">
       <Button variant="ghost" size="icon" accessibilityLabel={returningToPreview ? "Back to PDF preview" : "Back to saved CVs"} disabled={openingPreview} onPress={leave}><LucideIcon name="ChevronLeft" size={24} className="text-foreground"/></Button>
       <View className="flex-1"><Text accessibilityRole="header" className="text-h3 text-foreground">CV Editor</Text><Text numberOfLines={1} className="text-caption text-muted-foreground">{[document?.job.title,document?.job.company].filter(Boolean).join(" · ") || "Your tailored CV"}</Text></View>
+      {document && editor.resume && !editor.error ? <Button variant="ghost" size="icon" className="h-11 w-11" accessibilityLabel="Open PDF preview" disabled={openingPreview} onPress={()=>void preview()}><LucideIcon name="Maximize2" size={20} className="text-foreground"/></Button> : null}
     </View>
     {editor.loading ? <View className="flex-1 items-center justify-center gap-4"><ActivityIndicator/><Text className="text-body text-muted-foreground">Opening your saved CV…</Text></View>
     : !document || !editor.resume || editor.error ? <View className="flex-1 justify-center gap-4 px-6"><Notice tone="error" message={editor.error ?? "This CV could not be opened."}/>{!editor.routeError ? <Button onPress={()=>session && editor.accessStatus !== 401 ? void editor.reload() : setShowSignIn(true)}><Text>{session && editor.accessStatus !== 401 ? "Try again" : "Sign in"}</Text></Button>:null}<Button variant="outline" onPress={leave}><Text>Return to Tailored CVs</Text></Button></View>
     : <>
-      <View className="gap-4 px-6 pb-4">
-        <View accessibilityLiveRegion="polite" className="flex-row items-center gap-2">
-          <LucideIcon name={editor.saveState === "saved" ? "CloudCheck" : editor.saveState === "conflict" || editor.saveState === "error" ? "CircleAlert" : "CloudUpload"} size={15} className={editor.saveState === "saved" ? "text-success" : "text-muted-foreground"}/>
-          <Text className="text-caption text-muted-foreground">{statusLabels[editor.saveState]}</Text>
+      <View className="gap-2 px-5 pb-3">
+        <View className="flex-row items-center gap-2">
+          <View accessibilityLiveRegion="polite" className="min-w-0 flex-1 flex-row items-center gap-2"><LucideIcon name={editor.saveState === "saved" ? "CloudCheck" : "CloudUpload"} size={15} className="text-muted-foreground"/><Text className="flex-shrink text-caption text-muted-foreground">{statusLabels[editor.saveState]}</Text></View>
+          <Button variant="ghost" size="sm" accessibilityLabel="Edit content" onPress={()=>{setView("edit");setEditSection("Resume Content");setPanelOpen(true);}}><Text className="text-caption text-primary">Edit content</Text></Button>
+          <Button variant="outline" size="sm" accessibilityLabel="Design" accessibilityState={{expanded:panelOpen && view==="edit" && editSection==="Design & Layout"}} className="min-h-11 flex-row gap-2 rounded-xl" onPress={()=>{Keyboard.dismiss();setView("edit");setEditSection("Design & Layout");setPanelOpen(true);}}><LucideIcon name="SlidersHorizontal" size={16} className="text-foreground"/><Text className="text-caption">Design</Text></Button>
         </View>
-        {/* Both tab states initialize NativeWind’s variable provider on mount. */}
-        <View className="flex-row rounded-2xl bg-muted p-1">
-          {(["edit","match"] as const).map(tab=><Pressable key={tab} accessibilityRole="tab" accessibilityState={{selected:view === tab}} onPress={()=>{Keyboard.dismiss();setView(tab);}} className={cn("min-h-12 flex-1 items-center justify-center rounded-xl px-2 py-2",view === tab ? "bg-primary" : "bg-muted")}><Text className={cn("text-h5 text-center font-semibold",view === tab ? "text-primary-foreground" : "text-muted-foreground")}>{tab === "edit" ? "Edit CV" : "Job Match"}</Text></Pressable>)}
-        </View>
-        <View className="flex-row border-b border-border bg-background">
-          {secondaryTabs.map(tab=><Pressable key={tab} accessibilityRole="tab" accessibilityLabel={tab} accessibilityState={{selected:selectedSecondary === tab}} onPress={()=>{Keyboard.dismiss();if(tab === "Resume Content" || tab === "Design & Layout") setEditSection(tab);else setMatchSection(tab);}} className={cn("min-h-11 flex-1 items-center justify-center border-b-2 bg-background px-1 py-2",selectedSecondary === tab ? "border-primary" : "border-transparent")}><Text className={cn("text-caption text-center font-medium",selectedSecondary === tab ? "text-primary" : "text-muted-foreground")}>{tab}</Text></Pressable>)}
-        </View>
-      </View>
-      <ScrollView ref={contentScroll} className="flex-1" contentContainerClassName="gap-5 px-6 pb-8" keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} scrollEventThrottle={16} onScroll={event=>{if(view === "edit" && editSection === "Resume Content" && !activeKey) listOffset.current=Math.max(0,event.nativeEvent.contentOffset.y);}}>
         {editor.problem || actionError ? <View className="gap-3"><Notice tone="error" message={actionError ?? editor.problem ?? "Your edits need syncing."}/>{editor.saveState !== "conflict" ? <Button variant="outline" onPress={()=>{setActionError(null);void editor.flush();}}><Text>Retry saving</Text></Button> : null}</View> : null}
         {editor.saveState === "conflict" ? <View className="gap-3 rounded-2xl border border-border bg-card p-4"><Text className="text-body text-foreground">Choose which version to continue with. Your edits stay on this device until you decide.</Text><Button onPress={()=>void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" onPress={()=>void editor.resolveConflict("server")}><Text>Use the saved version</Text></Button></View> : null}
-        {view === "edit" && editSection === "Resume Content" ? <>
-          <ResumeSectionList sections={sections} onOpen={openSection} onActions={setMenuKey} onAdd={()=>setAddingSection(true)}/>
-          <View className="flex-row items-center gap-2"><LucideIcon name="ShieldCheck" size={16} className="text-muted-foreground"/><Text className="flex-1 text-caption leading-5 text-muted-foreground">Your original CV stays unchanged.</Text></View>
-        </> : null}
-        {view === "edit" && editSection === "Design & Layout" ? <DesignLayout layout={editor.layout} options={document.layout_options} onChange={editor.updateLayout} onReload={()=>void editor.reload()}/> : null}
-        {/* Keep evidence/disclosure selections mounted while the other main tab is open. */}
-        <View className={cn("bg-background",view === "match" ? "gap-5" : "hidden")}><JobMatch section={matchSection === "Overview" ? "overview" : "highlights"} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={()=>void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection}/></View>
-      </ScrollView>
-      <View className="gap-2 border-t border-border bg-background px-6 pt-4" style={{paddingBottom:Math.max(insets.bottom,16)}}><Button disabled={openingPreview || editor.saveState === "conflict"} onPress={()=>void preview()} className="min-h-14 flex-row gap-2 rounded-2xl">{openingPreview ? <ActivityIndicator/> : <LucideIcon name="FileText" size={20} className="text-primary-foreground"/>}<Text>{openingPreview ? "Saving your CV…" : "Preview PDF"}</Text></Button></View>
+      </View>
+      <View className="flex-1 bg-background" onLayout={event=>setStageHeight(event.nativeEvent.layout.height)}>
+        <View className="flex-1 bg-muted">
+          {viewError ? <View className="flex-1 items-center justify-center gap-3 px-6"><Text className="text-body text-muted-foreground">The PDF could not be displayed.</Text><Button variant="outline" onPress={()=>setViewError(false)}><Text>Retry preview</Text></Button></View> : <CvPreviewSurface resume={editor.resume} layout={editor.layout} pdf={live.pdf} error={live.error} onRetry={live.retry} onSectionPress={openSection} onError={()=>setViewError(true)}/>}
+          <View accessibilityLiveRegion="polite" className="min-h-8 flex-row items-center justify-between gap-2 border-t border-border bg-background px-5 py-1">
+            <Text className="text-caption text-muted-foreground">{live.pdf ? `Version ${live.pdf.revision}` : "CV preview"}</Text>
+            {editor.saveState === "saving" || live.updating && editor.saveState === "saved" ? <View className="flex-row items-center gap-2"><ActivityIndicator size="small"/><Text className="text-caption text-muted-foreground">Updating preview…</Text></View> : live.error ? <Button variant="ghost" size="sm" onPress={live.retry}><Text className="text-caption text-primary">Retry preview</Text></Button> : !previewCurrent && live.pdf ? <Text className="text-caption text-muted-foreground">Last saved preview</Text> : null}
+          </View>
+        </View>
+        <EditorControlsPanel open={panelOpen} availableHeight={stageHeight} onClose={()=>{Keyboard.dismiss();setPanelOpen(false);}}>
+          <View className="gap-2 bg-background px-5 pb-2">
+            <View className="flex-row rounded-xl bg-muted p-1">
+              {(["Resume Content","Design & Layout","Job Match"] as const).map(tab=>{
+                const selected=tab === "Job Match" ? view === "match" : view === "edit" && editSection === tab;
+                return <Pressable key={tab} accessibilityRole="tab" accessibilityLabel={tab} accessibilityState={{selected}} onPress={()=>{Keyboard.dismiss();if(tab === "Job Match")setView("match");else{setView("edit");setEditSection(tab);}}} className={cn("min-h-11 min-w-0 flex-1 items-center justify-center rounded-lg px-1 py-2",selected?"bg-primary":"bg-muted")}><Text className={cn("text-caption text-center font-medium",selected?"text-primary-foreground":"text-muted-foreground")}>{tab === "Design & Layout" ? "Design" : tab === "Resume Content" ? "Content" : tab}</Text></Pressable>;
+              })}
+            </View>
+            {view === "match" ? <View className="flex-row border-b border-border bg-background">{secondaryTabs.map(tab=><Pressable key={tab} accessibilityRole="tab" accessibilityLabel={tab} accessibilityState={{selected:selectedSecondary===tab}} onPress={()=>{Keyboard.dismiss();if(tab === "Overview" || tab === "Keyword Highlights")setMatchSection(tab);}} className={cn("min-h-10 flex-1 items-center justify-center border-b-2 bg-background px-1 py-2",selectedSecondary===tab?"border-primary":"border-transparent")}><Text className={cn("text-caption text-center",selectedSecondary===tab?"text-primary":"text-muted-foreground")}>{tab}</Text></Pressable>)}</View> : null}
+          </View>
+          <View testID="editor-content-controls" className={cn("flex-1 bg-background",view === "edit" && editSection === "Resume Content" ? "flex" : "hidden")}>
+            <ScrollView ref={contentScroll} className="flex-1" contentContainerClassName="gap-5 px-5 pb-6" keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} scrollEventThrottle={16} onLayout={()=>{if(panelOpen)contentScroll.current?.scrollTo({y:listOffset.current,animated:false});}} onScroll={event=>{if(panelOpen && view === "edit" && editSection === "Resume Content" && !activeKey)listOffset.current=Math.max(0,event.nativeEvent.contentOffset.y);}}>
+              <ResumeSectionList sections={sections} onOpen={openSection} onActions={setMenuKey} onAdd={()=>setAddingSection(true)}/>
+              <Text className="text-caption text-muted-foreground">Your original CV stays unchanged.</Text>
+            </ScrollView>
+          </View>
+          <View testID="editor-design-controls" className={cn("flex-1 bg-background",view === "edit" && editSection === "Design & Layout" ? "flex" : "hidden")}>
+            <ScrollView ref={designScroll} className="flex-1" contentContainerClassName="px-5 pb-6" keyboardShouldPersistTaps="handled" scrollEventThrottle={16} onLayout={()=>{if(panelOpen)designScroll.current?.scrollTo({y:designOffset.current,animated:false});}} onScroll={event=>{if(panelOpen && view === "edit" && editSection === "Design & Layout")designOffset.current=Math.max(0,event.nativeEvent.contentOffset.y);}}><DesignLayout layout={editor.layout} options={document.layout_options} onChange={editor.updateLayout} onReload={()=>void editor.reload()}/></ScrollView>
+          </View>
+          <View testID="editor-match-controls" className={cn("flex-1 bg-background",view === "match" ? "flex" : "hidden")}>
+            <ScrollView ref={matchScroll} className="flex-1" contentContainerClassName="px-5 pb-6" keyboardShouldPersistTaps="handled" scrollEventThrottle={16} onLayout={()=>{if(panelOpen)matchScroll.current?.scrollTo({y:matchOffset.current,animated:false});}} onScroll={event=>{if(panelOpen && view === "match")matchOffset.current=Math.max(0,event.nativeEvent.contentOffset.y);}}><JobMatch section={matchSection === "Overview" ? "overview" : "highlights"} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={()=>void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection}/></ScrollView>
+          </View>
+        </EditorControlsPanel>
+      </View>
+      <View className="border-t border-border bg-background px-5 pt-3" style={{paddingBottom:Math.max(insets.bottom,16)}}><Button disabled={!previewCurrent || sharing} onPress={()=>void download()} className="min-h-12 flex-row gap-2 rounded-xl">{sharing ? <ActivityIndicator/> : <LucideIcon name="Download" size={20} className="text-primary-foreground"/>}<Text>{sharing ? "Opening…" : "Download PDF"}</Text></Button></View>
       {section ? <SectionEditor section={section} saveLabel={statusLabels[editor.saveState]} onChange={(value:JsonValue)=>{if(editor.resume) editor.updateResume(withSectionMetadata(replaceSection(editor.resume,section.key,value)));}} onClose={closeSection} onRename={name=>rename(section.key,name)} actions={actionsFor(section)}/> : null}
     </>}
     {menuSection ? <SectionActionsMenu key={menuSection.key} actions={actionsFor(menuSection)} onClose={()=>setMenuKey(null)}/> : null}
