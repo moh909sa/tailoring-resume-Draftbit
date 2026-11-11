@@ -2,10 +2,23 @@ import type { EditorLayout } from "./layout";
 import type { EditorAnalysis, EditorDocument, EditorSave, JsonObject } from "./types";
 
 export type SaveState = "saved" | "saving" | "local" | "error" | "conflict";
+export type EditorWorkspace = {
+  tool: "content" | "templates" | "format" | "match";
+  trayOpen: boolean;
+  sectionKey: string | null;
+  fieldPath: (string | number)[] | null;
+  fieldLabel: string | null;
+  documentOffset: number;
+  matchSection: "overview" | "highlights";
+};
+export const emptyWorkspace = (): EditorWorkspace => ({tool:"content",trayOpen:false,sectionKey:null,fieldPath:null,fieldLabel:null,documentOffset:0,matchSection:"overview"});
 export type EditorState = {
   document: EditorDocument | null;
   resume: JsonObject | null;
   layout: EditorLayout | null;
+  layoutDraft: EditorLayout | null;
+  layoutDraftDirty: boolean;
+  workspace: EditorWorkspace;
   confirmedSkills: string[];
   loading: boolean;
   error: string | null;
@@ -15,8 +28,8 @@ export type EditorState = {
   analysis: EditorAnalysis | null;
   analysisLoading: boolean;
 };
-export const emptyEditorState = (): EditorState => ({document: null, resume: null, layout: null, confirmedSkills: [], loading: true, error: null, accessStatus: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false});
-type Backup = {version: 1; document: EditorDocument; resume: JsonObject; layout?: EditorLayout | null; confirmedSkills: string[]; pending: EditorSave | null; dirty: boolean};
+export const emptyEditorState = (): EditorState => ({document: null, resume: null, layout: null, layoutDraft: null, layoutDraftDirty: false, workspace: emptyWorkspace(), confirmedSkills: [], loading: true, error: null, accessStatus: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false});
+type Backup = {version: 1; document: EditorDocument; resume: JsonObject; layout?: EditorLayout | null; confirmedSkills: string[]; pending: EditorSave | null; dirty: boolean; layoutDraft?: EditorLayout | null; layoutDraftDirty?: boolean; workspace?: EditorWorkspace};
 type Dependencies = {
   read: () => Promise<string | null>;
   write: (raw: string) => Promise<unknown>;
@@ -43,6 +56,7 @@ export class CvEditorSession {
   private reading: AbortController | null = null;
   private analyzing: AbortController | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private workspaceTimer: ReturnType<typeof setTimeout> | null = null;
   private firstEdit: number | null = null;
   private initialized = false;
   private disposed = false;
@@ -56,9 +70,9 @@ export class CvEditorSession {
     if (!this.disposed) this.deps.onState(this.state);
   }
   private async persist() {
-    const {document, resume, layout, confirmedSkills} = this.state;
+    const {document, resume, layout, layoutDraft, layoutDraftDirty, workspace, confirmedSkills} = this.state;
     if (!document || !resume) return;
-    const raw = JSON.stringify({version: 1, document, resume, layout, confirmedSkills, pending: this.pending, dirty: this.dirty} satisfies Backup);
+    const raw = JSON.stringify({version: 1, document, resume, layout, layoutDraft, layoutDraftDirty, workspace, confirmedSkills, pending: this.pending, dirty: this.dirty} satisfies Backup);
     const write = this.writes.catch(() => undefined).then(() => this.deps.write(raw));
     this.writes = write;
     await write;
@@ -72,7 +86,8 @@ export class CvEditorSession {
   }
   private accept(doc: EditorDocument, keepDraft: boolean) {
     const analysis = keepDraft && doc.analysis ? {...doc.analysis, status: doc.analysis.score ? "stale" as const : "unavailable" as const} : doc.analysis;
-    this.change({document: doc, ...(keepDraft ? {} : {resume: doc.resume, confirmedSkills: doc.confirmed_skills}), ...(!keepDraft || this.state.layout === null ? {layout:doc.layout ?? null} : {}), analysis, loading: false, error: null, accessStatus: null});
+    const keepLayoutDraft=this.state.layoutDraftDirty && !same(this.state.layoutDraft,doc.layout ?? null);
+    this.change({...(keepLayoutDraft ? {} : {layoutDraft:doc.layout ?? null,layoutDraftDirty:false}), document: doc, ...(keepDraft ? {} : {resume: doc.resume, confirmedSkills: doc.confirmed_skills}), ...(!keepDraft || this.state.layout === null ? {layout:doc.layout ?? null} : {}), analysis, loading: false, error: null, accessStatus: null});
   }
   async restore() {
     try {
@@ -88,6 +103,22 @@ export class CvEditorSession {
           const pending = p && typeof p.mutation_id === "string" && Number.isSafeInteger(p.expected_revision) && same(p.resume, this.deps.parseDocument({...doc, resume:p.resume, confirmed_skills:p.confirmed_skills, layout:p.layout ?? doc.layout}).resume) ? p : null;
           this.dirty = dirty;
           this.pending = pending;
+          // Trial layouts never enter the serialized content writer until PDF is explicit.
+          if (data.layoutDraft && data.layoutDraftDirty === true) {
+            try {
+              const trial = this.deps.parseDocument({...doc,layout:data.layoutDraft}).layout;
+              if (trial) this.change({layoutDraft:trial,layoutDraftDirty:!same(trial,doc.layout ?? null)});
+            } catch { /* A damaged layout trial must not discard content recovery. */ }
+          }
+          const w = data.workspace;
+          if (w && ["content","templates","format","match"].includes(w.tool)) this.change({workspace:{
+            ...emptyWorkspace(),tool:w.tool,trayOpen:w.trayOpen === true,
+            sectionKey:typeof w.sectionKey === "string" ? w.sectionKey : null,
+            fieldPath:Array.isArray(w.fieldPath) && w.fieldPath.every(k=>typeof k === "string" || Number.isSafeInteger(k)) ? w.fieldPath : null,
+            fieldLabel:typeof w.fieldLabel === "string" ? w.fieldLabel : null,
+            documentOffset:typeof w.documentOffset === "number" && Number.isFinite(w.documentOffset) ? Math.max(0,w.documentOffset) : 0,
+            matchSection:w.matchSection === "highlights" ? "highlights" : "overview",
+          }});
           this.accept(doc, false);
           this.change({resume: candidate.resume, layout:candidate.layout ?? null, confirmedSkills: candidate.confirmed_skills, saveState: this.dirty ? "local" : "saved", analysis:this.dirty && doc.analysis ? {...doc.analysis,status:doc.analysis.score ? "stale":"unavailable"} : doc.analysis});
         }
@@ -133,6 +164,31 @@ export class CvEditorSession {
       if (this.reading === controller) this.reading = null;
     }
     if (this.dirty && this.state.saveState !== "conflict") this.schedule();
+  }
+  updateLayoutDraft(layout: EditorLayout) {
+    if (!this.state.document || this.disposed || same(layout,this.state.layoutDraft)) return;
+    this.change({layoutDraft:layout,layoutDraftDirty:!same(layout,this.state.document.layout ?? null)});
+    void this.persist().catch(()=>this.change({problem:"Your layout could not be kept on this device. Keep this screen open and try PDF again."}));
+  }
+  updateWorkspace(patch: Partial<EditorWorkspace>) {
+    if (this.disposed) return;
+    this.change({workspace:{...this.state.workspace,...patch}});
+    if (this.workspaceTimer) clearTimeout(this.workspaceTimer);
+    this.workspaceTimer=setTimeout(()=>{this.workspaceTimer=null;void this.persist().catch(()=>undefined);},250);
+  }
+  async saveForPdf(): Promise<EditorDocument | null> {
+    // First reconcile any content/receipt. An unrelated autosave always uses layout,
+    // while the canvas uses layoutDraft. Only this explicit action bridges them.
+    const content = await this.flush();
+    if (!content || this.disposed) return null;
+    const selected=this.state.layoutDraft;
+    if (selected && !same(selected,content.layout ?? null)) this.update(this.state.resume!,this.state.confirmedSkills,selected);
+    const saved=await this.flush();
+    if (saved && same(this.state.layoutDraft,selected)) {
+      this.change({layoutDraft:saved.layout ?? null,layoutDraftDirty:false});
+      await this.persist();
+    }
+    return saved;
   }
   update(resume: JsonObject, skills = this.state.confirmedSkills, layout = this.state.layout) {
     if (!this.state.document || this.disposed || (same(resume, this.state.resume) && same(skills,this.state.confirmedSkills) && same(layout,this.state.layout))) return;
@@ -239,7 +295,7 @@ export class CvEditorSession {
   }
   dispose() {
     this.disposed = true;
-    this.stopTimer();this.reading?.abort();this.analyzing?.abort();
+    this.stopTimer();if(this.workspaceTimer)clearTimeout(this.workspaceTimer);this.reading?.abort();this.analyzing?.abort();
     // Transport cancellation cannot roll back a server save. Keep the mutation
     // receipt and device backup so the next session can safely reconcile it.
     void this.persist().catch(() => undefined);

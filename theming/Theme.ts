@@ -46,5 +46,6 @@ export interface Theme {
     body?: Typography;
     caption?: Typography;
     button?: Typography;
+    editorTitle?: Typography;
   };
 }

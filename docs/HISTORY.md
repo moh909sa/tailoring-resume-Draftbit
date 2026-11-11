@@ -51,3 +51,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Resume Content uses one trailing section menu and named whole-section deletion through the existing save flow; item removal stays inside section editors.
 
 - Design & Layout saves full revision-bound formatting through the mobile editor API; preview, download and readability use that saved layout without paper overrides.
+
+- Edit Resume keeps a local structured document above compact tools; formatting trials stay separate from content autosave and commit only for explicit PDF export.

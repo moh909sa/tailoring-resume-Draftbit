@@ -32,6 +32,7 @@ const darkTheme: Theme = {
     overlay: "hsl(0 0% 100%)",
   },
   typography: {
+    editorTitle: {fontSize:"17px",fontFamily:"Inter_600SemiBold"},
     h1: {
       fontSize: "36px",
       fontFamily: "Inter_700Bold",

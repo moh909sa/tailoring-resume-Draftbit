@@ -19,7 +19,7 @@ export type SectionActionsProps = {
 };
 
 export function SectionActions({label,onPress,showLabel = false}: {label:string;onPress:()=>void;showLabel?:boolean}) {
-  return <Button variant="ghost" size={showLabel ? "default" : "icon"} className={showLabel ? "h-auto native:h-auto min-h-11 min-w-0 max-w-full flex-row gap-2 rounded-xl px-3 py-2" : "h-11 w-11 shrink-0 rounded-xl"} accessibilityLabel={`Actions for ${label}`} accessibilityHint="Rename, reorder and manage this section" onPress={()=>{Keyboard.dismiss();onPress();}}>
+  return <Button variant="ghost" size={showLabel ? "default" : "icon"} className={showLabel ? "h-auto native:h-auto min-h-11 native:min-h-[44px] min-w-0 max-w-full flex-row gap-2 rounded-xl px-3 py-2" : "h-11 w-11 shrink-0 native:h-[44px] native:w-[44px] rounded-xl"} accessibilityLabel={`Actions for ${label}`} accessibilityHint="Rename, reorder and manage this section" onPress={()=>{Keyboard.dismiss();onPress();}}>
     {showLabel ? <Text className="flex-shrink text-caption font-medium text-foreground web:whitespace-normal">Section actions</Text> : null}
     <LucideIcon name="Ellipsis" size={21} className="shrink-0 text-muted-foreground"/>
   </Button>;
@@ -37,14 +37,14 @@ export function SectionActionsMenu({actions,onClose}: {actions:SectionActionsPro
     setVisible(false);
     if (Platform.OS !== "ios") finish();
   };
-  const itemClass="h-auto native:h-auto min-h-12 flex-row justify-start gap-3 rounded-xl px-4 py-3";
+  const itemClass="h-auto native:h-auto min-h-12 native:min-h-[44px] flex-row justify-start gap-3 rounded-xl px-4 py-3";
   return <AppSheet visible={visible} presentation="actions" onClose={()=>dismiss()} onDismiss={finish}>
     <View className="max-h-full overflow-hidden rounded-t-3xl border border-border bg-card px-4 pt-5" style={{paddingBottom:Math.max(insets.bottom,16)}}>
       <ScrollView keyboardShouldPersistTaps="handled" bounces={false} contentContainerClassName="gap-3 pb-4">
         {confirming ? <View className="gap-5 px-2 pb-2">
           <Text accessibilityRole="header" className="text-h4 text-foreground">Delete “{actions.label}”?</Text>
           <Text className="text-body leading-6 text-muted-foreground">This removes the entire section and all its content from this tailored CV.</Text>
-          <Button variant="destructive" className="min-h-12 rounded-xl" onPress={()=>dismiss(actions.onDelete)}><Text>Delete Section</Text></Button>
+          <Button variant="destructive" className="min-h-12 native:min-h-[44px] rounded-xl" onPress={()=>dismiss(actions.onDelete)}><Text>Delete Section</Text></Button>
         </View> : <>
           <View className="gap-1 px-4 pb-2"><Text className="text-caption text-muted-foreground">Section actions</Text><Text accessibilityRole="header" className="text-h4 text-foreground">{actions.label}</Text></View>
           <View>
@@ -57,7 +57,7 @@ export function SectionActionsMenu({actions,onClose}: {actions:SectionActionsPro
           </View>
         </>}
       </ScrollView>
-      <Button variant="secondary" className="min-h-12 rounded-xl" onPress={()=>dismiss()}><Text>Cancel</Text></Button>
+      <Button variant="secondary" className="min-h-12 native:min-h-[44px] rounded-xl" onPress={()=>dismiss()}><Text>Cancel</Text></Button>
     </View>
   </AppSheet>;
 }
@@ -94,7 +94,7 @@ export function AddCustomSectionSheet({onCreate,onClose,onDismiss,visible = true
         <LucideIcon name={type === option.type ? "CircleCheck" : "Circle"} size={20} className="mt-0.5 text-primary"/>
         <View className="min-w-0 flex-1 gap-1"><Text className="text-body font-semibold text-foreground web:whitespace-normal">{option.label}</Text><Text className="text-caption leading-5 text-muted-foreground web:whitespace-normal">{option.description}</Text></View>
       </Button>)}
-      <Button disabled={!name.trim()} className="min-h-12 rounded-xl" onPress={()=>{Keyboard.dismiss();onCreate(name.trim(),type);}}><Text>Create section</Text></Button>
+      <Button disabled={!name.trim()} className="min-h-12 native:min-h-[44px] rounded-xl" onPress={()=>{Keyboard.dismiss();onCreate(name.trim(),type);}}><Text>Create section</Text></Button>
     </ScrollView>
   </AppSheet>;
 }

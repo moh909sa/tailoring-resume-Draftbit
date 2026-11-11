@@ -6,7 +6,7 @@ import * as Crypto from "expo-crypto";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { getEditorDocument, saveEditorDocument, recalculateEditorAnalysis } from "./api";
 import { parseEditorDocument, type JsonObject } from "./types";
-import { CvEditorSession, editorStorageKey, emptyEditorState, type EditorState } from "./session";
+import { CvEditorSession, editorStorageKey, emptyEditorState, type EditorState, type EditorWorkspace } from "./session";
 import type { EditorLayout } from "./layout";
 import { EditorInstances } from "./instances";
 import { readEditorRoute } from "./routes";
@@ -61,6 +61,9 @@ export function useCvEditor(routeId: string | string[] | undefined) {
     routeError: route.error,
     getSnapshot:()=>getManager()?.snapshot ?? null,
     updateResume: (resume: JsonObject, skills?: string[]) => getManager()?.update(resume,skills),
+    updateLayoutDraft: (layout: EditorLayout) => getManager()?.updateLayoutDraft(layout),
+    updateWorkspace: (patch: Partial<EditorWorkspace>) => getManager()?.updateWorkspace(patch),
+    saveForPdf: async () => (await getManager()?.saveForPdf()) ?? null,
     updateLayout: (layout: EditorLayout) => {const m=getManager();if(m?.snapshot.resume) m.update(m.snapshot.resume,m.snapshot.confirmedSkills,layout);},
     updateConfirmedSkills: (skills: string[]) => {const m=getManager();if(m?.snapshot.resume) m.update(m.snapshot.resume,skills);},
     reload: async () => {await getManager()?.refresh();},

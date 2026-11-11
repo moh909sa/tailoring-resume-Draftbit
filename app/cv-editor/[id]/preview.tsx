@@ -33,6 +33,7 @@ export default function CvPdfPreview() {
   const [attempt, setAttempt] = useState(0);
   const pdf = !routeError && preview && preview.ownerId === ownerId && preview.id === id && preview.requestedRevision === expectedRevision ? preview.pdf : null;
   const goBack = () => {
+    if (params.returnToEditor === "1" && router.canGoBack()) {router.back();return;}
     if (!id) router.replace("/(tabs)/library/tailored-cvs");
     else if (routeError) router.replace({ pathname: "/cv-editor/[id]", params: { id } });
     else if (params.returnTo === "library" || !router.canGoBack()) router.replace("/(tabs)/library/tailored-cvs");
@@ -100,12 +101,13 @@ export default function CvPdfPreview() {
       <View className="w-full max-w-3xl flex-1 self-center">
         <View className="gap-3 border-b border-border px-4 py-3">
           <View className="flex-row items-center gap-3">
-            <Pressable accessibilityRole="button" accessibilityLabel="Back" className="h-11 w-11 items-center justify-center rounded-full bg-secondary" onPress={goBack}><Icon name="ChevronLeft" className="h-5 w-5 text-foreground" /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Back" className="h-11 w-11 native:h-[44px] native:w-[44px] items-center justify-center rounded-full bg-secondary" onPress={goBack}><Icon name="ChevronLeft" className="h-5 w-5 text-foreground" /></Pressable>
             <View className="flex-1 gap-1"><Text accessibilityRole="header" numberOfLines={2} className="text-h5 text-foreground">{pdf ? preview?.title : "Your tailored CV"}</Text><Text className="text-caption text-muted-foreground">{pdf ? `${pdf.pageCount ? `${pdf.pageCount} ${pdf.pageCount === 1 ? "page" : "pages"} · ` : ""}Version ${pdf.revision}` : "PDF preview"}</Text></View>
+            {params.returnToEditor === "1" ? <Button variant="ghost" className="min-h-11 native:min-h-[44px] min-w-11" accessibilityLabel="Done, return to editor" onPress={editResume}><Text className="text-primary">Done</Text></Button> : null}
           </View>
           <View className="flex-row items-center justify-between gap-3">
           <Text className="min-w-0 flex-1 text-caption text-muted-foreground">{preview?.layout ? `${layoutTemplateName(preview.layout.template)} · ${preview.layout.pageSize === "LETTER" ? "Letter" : "A4"}` : "Saved layout"}</Text>
-          <Button variant="outline" accessibilityLabel="Edit Resume" className="min-h-11 flex-row gap-2 rounded-xl" disabled={!id || !!routeError || !ownerId || sharing} onPress={editResume}><Icon name="Pencil" className="h-4 w-4 text-foreground" /><Text>Edit Resume</Text></Button>
+          {params.returnToEditor !== "1" ? <Button variant="outline" accessibilityLabel="Edit Resume" className="min-h-11 native:min-h-[44px] flex-row gap-2 rounded-xl" disabled={!id || !!routeError || !ownerId || sharing} onPress={editResume}><Icon name="Pencil" className="h-4 w-4 text-foreground" /><Text>Edit Resume</Text></Button> : null}
           </View>
         </View>
 
@@ -115,7 +117,7 @@ export default function CvPdfPreview() {
         <View className="gap-2 border-t border-border px-4 py-3">
           {pdf && ownerId && id ? <PdfReadability key={pdf.uri} ownerId={ownerId} id={id} revision={pdf.revision} /> : null}
           {pdf && error ? <Text accessibilityRole="alert" className="text-body text-destructive">{error}</Text> : null}
-          <Button className="flex-row gap-2 rounded-xl" disabled={!pdf || loading || sharing} onPress={() => void download()}>{sharing ? <ActivityIndicator /> : <Icon name="Download" className="h-5 w-5 text-primary-foreground" />}<Text>{sharing ? "Opening…" : "Download PDF"}</Text></Button>
+          <Button className="min-h-[44px] flex-row gap-2 rounded-xl" disabled={!pdf || loading || sharing} onPress={() => void download()}>{sharing ? <ActivityIndicator /> : <Icon name="Download" className="h-5 w-5 text-primary-foreground" />}<Text>{sharing ? "Opening…" : "Download PDF"}</Text></Button>
           <Text className="text-center text-caption text-muted-foreground">{Platform.OS === "ios" ? "Choose Save to Files in the share sheet, or share your CV directly." : "Downloads the same saved document shown in this preview."}</Text>
         </View>
       </View>

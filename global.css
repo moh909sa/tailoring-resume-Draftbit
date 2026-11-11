@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 @layer components {
+  .text-editor-title {
+    font-size: var(--editorTitle-fontSize);
+    font-family: var(--editorTitle-fontFamily);
+  }
   .text-h1 {
     font-size: var(--h1-fontSize);
     font-family: var(--h1-fontFamily);

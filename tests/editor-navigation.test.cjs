@@ -62,7 +62,7 @@ function harness() {
   const router={dismissTo:href=>h.calls.push(["dismissTo",href]),push:href=>h.calls.push(["push",href]),replace:href=>h.calls.push(["replace",href]),back:()=>h.calls.push(["back"]),navigate:href=>h.calls.push(["navigate",href]),canGoBack:()=>h.canGoBack};
   const mocks={
     react:hooks,
-    "react-native":{View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",Platform:{OS:"web"},Keyboard:{dismiss(){},metrics:()=>undefined},useWindowDimensions:()=>({width:390,height:844}),AppState:{addEventListener:()=>({remove(){}})}},
+    "react-native":{View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",KeyboardAvoidingView:"KeyboardAvoidingView",Platform:{OS:"web"},Keyboard:{dismiss(){},metrics:()=>undefined},useWindowDimensions:()=>({width:390,height:844}),AppState:{addEventListener:()=>({remove(){}})}},
     "expo-router":{router,useRouter:()=>router,useLocalSearchParams:()=>h.params,Stack:{Screen:"StackScreen"},useFocusEffect:fn=>hooks.useEffect(()=>h.focused?fn():undefined,[fn,h.focused])},
     "react-native-safe-area-context":{SafeAreaView:"SafeAreaView",useSafeAreaInsets:()=>({top:0,bottom:0,left:0,right:0})},
     "@/lib/editor/useLivePreview":{useLivePreview:()=>({pdf:null,updating:false,error:null,retry:()=>{},retain:()=>()=>{}})},
@@ -75,12 +75,28 @@ function harness() {
     "@react-native-async-storage/async-storage":{__esModule:true,default:{getItem:async()=>null,setItem:async()=>{}}},
     "expo-crypto":{randomUUID:()=>"44444444-4444-4444-8444-444444444444"},
   };
-  for(const [file,name] of Object.entries({"components/layout/AppScreen":"AppScreen","components/layout/AppSheet":"AppSheet","components/layout/ScreenHeader":"ScreenHeader","components/library/LibrarySections":"LibrarySections","components/cv/AccountSheet":"AccountSheet","components/cv/Notice":"Notice","components/cv/DocumentEmptyState":"DocumentEmptyState","components/ui/button":"Button","components/ui/text":"Text","components/editor/SectionEditor":"SectionEditor","components/editor/DesignLayout":"DesignLayout","components/editor/CvPreviewSurface":"CvPreviewSurface","components/editor/EditorControlsPanel":"EditorControlsPanel","components/editor/JobMatch":"JobMatch","components/editor/PdfViewer":"PdfViewer","components/editor/PdfReadability":"PdfReadability"}))mocks["@/"+file]={[name]:name};
-  h.open=(file,extra={},exportName='default',props={})=>{const loaded=load(file,{...mocks,...extra})[exportName];component=()=>loaded(props);h.render();};
+  for(const [file,name] of Object.entries({"components/layout/AppScreen":"AppScreen","components/layout/AppSheet":"AppSheet","components/layout/ScreenHeader":"ScreenHeader","components/library/LibrarySections":"LibrarySections","components/cv/AccountSheet":"AccountSheet","components/cv/Notice":"Notice","components/cv/DocumentEmptyState":"DocumentEmptyState","components/ui/button":"Button","components/ui/text":"Text","components/editor/SectionEditor":"SectionEditor","components/editor/LiveCvRenderer":"LiveCvRenderer","components/editor/DesignLayout":"DesignLayout","components/editor/CvPreviewSurface":"CvPreviewSurface","components/editor/EditorControlsPanel":"EditorControlsPanel","components/editor/JobMatch":"JobMatch","components/editor/PdfViewer":"PdfViewer","components/editor/PdfReadability":"PdfReadability"}))mocks["@/"+file]={[name]:name};
+  h.open=(file,extra={},exportName='default',props={})=>{
+    if(file==='app/cv-editor/[id].tsx' && extra['@/lib/editor/useCvEditor']) {
+      const original=extra['@/lib/editor/useCvEditor'].useCvEditor;
+      let workspace={tool:'content',trayOpen:false,sectionKey:null,fieldPath:null,fieldLabel:null,documentOffset:0,matchSection:'overview'},trial;
+      extra={...extra,'@/lib/editor/useCvEditor':{useCvEditor:(...args)=>{
+        const editor=original(...args);
+        return {...editor,
+          workspace:editor.updateWorkspace?editor.workspace:workspace,
+          layoutDraft:editor.updateLayoutDraft?editor.layoutDraft:trial??editor.layoutDraft??editor.layout??editor.document?.layout??null,
+          updateWorkspace:editor.updateWorkspace??(patch=>{workspace={...workspace,...patch};dirty=true;}),
+          updateLayoutDraft:editor.updateLayoutDraft??(value=>{trial=value;dirty=true;}),
+          saveForPdf:editor.saveForPdf??(async()=>{if(trial&&editor.updateLayout)editor.updateLayout(trial);return editor.flush();}),
+        };
+      }}};
+    }
+    const loaded=load(file,{...mocks,...extra})[exportName];component=()=>loaded(props);h.render();
+  };
   h.render=()=>{cursor=0;dirty=false;tree=component();for(const effect of effects.splice(0))effect();return tree;};
   h.pump=async()=>{for(let i=0;i<8;i++){await tick();if(dirty)h.render();}};
   h.find=predicate=>nodes(tree).find(predicate);
-  h.button=label=>h.find(n=>(n.type==="Button" || n.type==="Pressable" && n.props.accessibilityRole==="button")&&(text(n)===label || n.props.accessibilityLabel===label));
+  h.button=label=>h.find(n=>(n.type==="Button" || n.type==="Pressable" && ["button","tab"].includes(n.props.accessibilityRole))&&(text(n)===label || n.props.accessibilityLabel===label));
   h.getText=()=>text(tree);
   h.blur=()=>{h.focused=false;h.render();};
   h.focus=()=>{h.focused=true;h.render();};
@@ -302,8 +318,8 @@ test('editor control panes switch repeatedly through native style resolution wit
  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
  const renderers=new Map();
  const paint=async()=>{for(const node of nodes(h.render()).filter(n=>n.props.accessibilityRole==='tab')){const key=node.props.accessibilityLabel;if(!renderers.has(key))renderers.set(key,await nativeTransition());assert.doesNotThrow(()=>renderers.get(key)(node.props.className));}};
- await paint();for(const label of ['Job Match','Keyword Highlights','Overview','Design & Layout','Resume Content','Job Match','Design & Layout']){h.find(n=>n.props.accessibilityRole==='tab'&&n.props.accessibilityLabel===label).props.onPress();h.render();await paint();}
- assert.equal(updates,1);assert.deepEqual(editor.resume,document.resume);h.dispose();
+ await paint();for(const label of ['Job Match','Keyword Highlights','Overview','Templates','Content','Job Match','Templates']){h.button(label).props.onPress();h.render();await paint();}
+ assert.equal(updates,0);assert.deepEqual(editor.resume,document.resume);h.dispose();
 });
 
 test('native PDF loading-to-document transitions preserve context; paper size is saved in the editor',async(t)=>{
@@ -335,18 +351,15 @@ test('iOS preview downloads the same saved artifact and pins a new acknowledged 
  });
 });
 
-test('editing from preview waits for saving before returning, retains recovery on failure, and avoids duplicate previews',async(t)=>{
-  for(const action of ['Back to PDF preview','Open PDF preview'])await t.test(action,async(t)=>{
-    const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,returnTo:'preview',previewReturnTo:'library'};
-    const document=makeDocument();let finish;
-    const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:()=>new Promise(resolve=>finish=resolve)};
-    h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
-    const press=()=>action==='Open PDF preview'?h.button(action).props.onPress():h.find(n=>n.props.accessibilityLabel===action).props.onPress();
-    press();await h.pump();assert.deepEqual(h.calls,[]);
-    finish(null);await h.pump();assert.deepEqual(h.calls,[]);assert.match(h.find(n=>n.type==='Notice').props.message,/Save your latest changes/);
-    press();await h.pump();finish({...document,revision:7});await h.pump();
-    assert.deepEqual(h.calls,[[action==='Back to PDF preview'?'dismissTo':'push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',...(action==='Back to PDF preview'?{returnTo:'library'}:{returnToEditor:'1'})}}]]);
-  });
+test('PDF waits for acknowledgement and retains the editor draft and retry after a failed save',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,returnTo:'preview',previewReturnTo:'library'};
+ const document=makeDocument();let finish;
+ const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:()=>new Promise(resolve=>finish=resolve)};
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+ h.button('Open PDF preview').props.onPress();await h.pump();assert.deepEqual(h.calls,[]);
+ finish(null);await h.pump();assert.deepEqual(h.calls,[]);assert.match(h.find(n=>n.type==='Notice').props.message,/text and layout are kept/);
+ h.button('Retry PDF').props.onPress();await h.pump();finish({...document,revision:7});await h.pump();
+ assert.deepEqual(h.calls,[['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnToEditor:'1'}}]]);
 });
 
 test('preview refresh failures cannot download the previous saved artifact',async(t)=>{
@@ -360,13 +373,14 @@ test('preview refresh failures cannot download the previous saved artifact',asyn
   assert.equal(h.find(n=>n.type==='PdfViewer'),undefined);
 });
 
-test('returning editor without navigation history replaces itself with the saved Letter preview',async(t)=>{
-  const h=harness();t.after(()=>h.dispose());h.canGoBack=false;
-  h.params={id:TAILORED,returnTo:'preview',previewReturnTo:'library'};const document=makeDocument();
-  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>({...document,revision:8})};
-  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
-  h.find(n=>n.props.accessibilityLabel==='Back to PDF preview').props.onPress();await h.pump();
-  assert.deepEqual(h.calls,[['replace',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'8',returnTo:'library'}}]]);
+test('Back leaves local layout trials uncommitted and uses Library when no navigation history exists',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());h.canGoBack=false;h.params={id:TAILORED,returnTo:'preview'};
+ const document=makeDocument();let contentFlushes=0,exports=0;
+ const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>{contentFlushes++;return document;},saveForPdf:async()=>{exports++;return document;}};
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+ h.button('Templates').props.onPress();h.render();h.find(n=>n.type==='DesignLayout').props.onChange({...document.layout,template:'modern'});h.render();
+ h.button('Back to saved preview').props.onPress();await h.pump();
+ assert.equal(contentFlushes,1);assert.equal(exports,0);assert.deepEqual(h.calls,[['replace','/(tabs)/library/tailored-cvs']]);
 });
 
 test('editor sections respect saved names/order while keeping Personal Information first and preserving custom fields',()=>{
@@ -402,13 +416,13 @@ test('Job Match keeps engine precision, disclosure order and stale evidence boun
   props.analysis=null;props.section='overview';h.render();assert.match(h.getText(),/Not calculated/);assert.doesNotMatch(h.getText(),/72\.4/);h.dispose();
 });
 
-test('Design & Layout uses the saved layout and capabilities, with one Preview PDF that waits for acknowledgement',async()=>{
+test('Templates and Format use the local draft and server capabilities; PDF waits for explicit acknowledgement',async()=>{
  const h=harness(),document=makeDocument();let finish;
- h.params={id:TAILORED,returnTo:'preview',previewReturnTo:'library'};
- const editor={document,resume:document.resume,layout:document.layout,updateLayout:()=>{},confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:()=>new Promise(resolve=>finish=resolve)};
+ const editor={document,resume:document.resume,layout:document.layout,layoutDraft:document.layout,updateLayoutDraft:next=>{editor.layoutDraft=next;},confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,saveForPdf:()=>new Promise(resolve=>finish=resolve)};
  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
- h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.onPress();h.render();
- const design=h.find(n=>n.type==='DesignLayout');assert.equal(design.props.layout,editor.layout);assert.equal(design.props.options,document.layout_options);assert.equal(design.props.onChange,editor.updateLayout);
+ h.button('Templates').props.onPress();h.render();
+ const design=h.find(n=>n.type==='DesignLayout'&&n.props.mode==='templates');assert.equal(design.props.layout,editor.layoutDraft);assert.equal(design.props.options,document.layout_options);assert.equal(design.props.onChange,editor.updateLayoutDraft);
+ design.props.onChange({...editor.layoutDraft,template:'modern'});h.render();assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.layout.template,'modern');assert.equal(editor.layout.template,'swiss-single');
  assert.equal(nodes(h.render()).filter(n=>n.type==='Button'&&n.props.accessibilityLabel==='Open PDF preview').length,1);
  h.button('Open PDF preview').props.onPress();await h.pump();assert.deepEqual(h.calls,[]);finish({...document,revision:7});await h.pump();
  assert.deepEqual(h.calls,[['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnToEditor:'1'}}]]);h.dispose();
@@ -433,20 +447,20 @@ test('control panes remember Job Match selection without discarding a pending Su
   const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{saves++;await new Promise(resolve=>release=resolve);remote={...remote,revision:7,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
   t.after(()=>manager.dispose());await manager.restore();
   h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,refreshAnalysis:()=>{},flush:()=>manager.flush(),updateResume:v=>manager.update(v)})}});
-  const tab=label=>h.find(n=>n.props.accessibilityRole==='tab'&&(text(n)===label || n.props.accessibilityLabel===label));
+  const tab=label=>h.button(label) ?? h.find(n=>n.props.accessibilityRole==='tab'&&(text(n)===label || n.props.accessibilityLabel===label));
   const select=label=>{tab(label).props.onPress();h.render();};
-  assert.equal(tab('Resume Content').props.accessibilityState.selected,true);
+  assert.equal(tab('Content').props.accessibilityState.selected,true);
   h.find(n=>n.props.accessibilityLabel==='Edit Summary').props.onPress();h.render();
   const section=h.find(n=>n.type==='SectionEditor');section.props.onChange('Pending complete Summary');section.props.onClose();await h.pump();
   assert.equal(saves,1);assert.equal(manager.snapshot.saveState,'saving');
-  select('Design & Layout');assert.ok(h.find(n=>n.type==='DesignLayout'));assert.match(h.find(n=>n.props.testID==='editor-content-controls').props.className,/hidden/);
+  select('Templates');assert.ok(h.find(n=>n.type==='DesignLayout'));assert.match(h.find(n=>n.props.testID==='editor-content-controls').props.className,/hidden/);
   select('Job Match');assert.equal(tab('Overview').props.accessibilityState.selected,true);assert.equal(h.find(n=>n.type==='JobMatch').props.section,'overview');
   select('Keyword Highlights');assert.equal(h.find(n=>n.type==='JobMatch').props.section,'highlights');
-  select('Design & Layout');assert.equal(tab('Design & Layout').props.accessibilityState.selected,true);
-  select('Resume Content');assert.ok(h.find(n=>n.props.accessibilityLabel==='Edit Summary'));assert.equal(manager.snapshot.resume.summary,'Pending complete Summary');
+  select('Templates');assert.equal(tab('Templates').props.accessibilityState.selected,true);
+  select('Content');assert.ok(h.find(n=>n.props.accessibilityLabel==='Edit Summary'));assert.equal(manager.snapshot.resume.summary,'Pending complete Summary');
   select('Job Match');assert.equal(tab('Keyword Highlights').props.accessibilityState.selected,true);
-  select('Overview');select('Resume Content');assert.equal(tab('Resume Content').props.accessibilityState.selected,true);
-  assert.equal(saves,1);assert.deepEqual(h.calls,[]);assert.equal(h.find(n=>n.type==='ScrollView').props.keyboardDismissMode,'interactive');
+  select('Overview');select('Content');assert.equal(tab('Content').props.accessibilityState.selected,true);
+  assert.equal(saves,1);assert.deepEqual(h.calls,[]);assert.equal(h.find(n=>n.type==='KeyboardAvoidingView').props.behavior,'padding');
   release();await h.pump();assert.equal(manager.snapshot.saveState,'saved');assert.equal(remote.resume.summary,'Pending complete Summary');
   h.button('Open PDF preview').props.onPress();await h.pump();assert.deepEqual(h.calls,[['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnToEditor:'1'}}]]);
 });
@@ -471,7 +485,7 @@ test('Personal Information and Summary open, save, and close at the original lis
   const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{remote={...remote,revision:remote.revision+1,resume:copy(body.resume)};return copy(remote);},analyze:async()=>null,onState:()=>{}});
   t.after(()=>manager.dispose());await manager.restore();
   h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...manager.snapshot,flush:()=>manager.flush(),updateResume:v=>manager.update(v)})}});
-  h.button('Edit content').props.onPress();h.render();
+  h.button('Content').props.onPress();h.render();
   h.find(n=>n.type==='ScrollView').props.ref.current={scrollTo:options=>scrolls.push(options)};
   const changes=[['Personal Information','personalInfo',{name:'Updated Name',email:'new@example.com'}],['Summary','summary','Updated full Summary with all details.']];
   for(const [label,key,value] of changes){
@@ -496,7 +510,7 @@ test('Job Match edit actions use the restored section editors',()=>{
   const h=harness(),document=makeDocument();
   const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>document,refreshAnalysis:()=>{}};
   h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
-  h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Match').props.onPress();h.render();
+  h.button('Job Match').props.onPress();h.render();
   h.find(n=>n.type==='JobMatch').props.onEdit('workExperience');h.render();
   assert.equal(h.find(n=>n.type==='SectionEditor').props.section.key,'workExperience');h.dispose();
 });
@@ -674,33 +688,31 @@ test('an explicit acknowledged PDF revision cannot drift to a newer server layou
  await h.pump();assert.equal(seen[0][0],7);assert.ok(seen[0][1] instanceof AbortSignal);assert.equal(h.find(n=>n.type==='PdfReadability').props.revision,7);assert.match(h.getText(),/Version 7/);assert.doesNotMatch(h.getText(),/Modern · Letter/);
 });
 
-test('closing design controls retains its mounted controls, selected panel and scroll offset; download waits for the visible saved revision',async(t)=>{
- const h=harness();t.after(()=>h.dispose());const document=makeDocument();let shared=null,retained=0,released=0;
- const artifact=revision=>({uri:`file:///visible-${revision}.pdf`,revision,filename:'cv.pdf',dispose:async()=>{}});
- const live={pdf:artifact(6),updating:false,error:null,retry:()=>{},retain:()=>{retained++;return()=>released++;}};
- const editor={document,resume:document.resume,layout:document.layout,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,flush:async()=>editor.document,updateLayout:next=>{editor.layout=next;editor.saveState='saving';}};
- h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor},'@/lib/editor/useLivePreview':{useLivePreview:()=>live},'@/lib/editor/pdf':{shareEditorPdf:async pdf=>{shared=pdf;}}});
- assert.equal(h.find(n=>n.type==='EditorControlsPanel').props.open,false);assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.pdf,live.pdf);
- h.button('Design').props.onPress();h.render();assert.equal(h.find(n=>n.type==='EditorControlsPanel').props.open,true);assert.equal(h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.accessibilityState.selected,true);
- const design=h.find(n=>n.type==='DesignLayout');assert.equal(design.key,null);
- const scroll=h.find(n=>n.type==='ScrollView'&&nodes(n).some(c=>c.type==='DesignLayout')),positions=[];scroll.props.ref.current={scrollTo:p=>positions.push(p)};
- scroll.props.onScroll({nativeEvent:{contentOffset:{y:284}}});
- h.find(n=>n.type==='EditorControlsPanel').props.onClose();h.render();assert.equal(h.find(n=>n.type==='EditorControlsPanel').props.open,false);assert.ok(h.find(n=>n.type==='DesignLayout'),'closing cannot unmount formatting state');
- h.button('Design').props.onPress();h.render();h.find(n=>n.type==='ScrollView'&&nodes(n).some(c=>c.type==='DesignLayout')).props.onLayout();assert.deepEqual(positions.at(-1),{y:284,animated:false});
- for(const template of ['modern','swiss-single','modern']){h.find(n=>n.type==='DesignLayout').props.onChange({...editor.layout,template});h.render();}
- h.find(n=>n.type==='DesignLayout').props.onChange({...editor.layout,margins:{...editor.layout.margins,top:12}});h.render();
- assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.pdf.revision,6);assert.equal(h.button('Download PDF').props.disabled,true);assert.match(h.getText(),/Updating preview/);
- editor.document={...editor.document,revision:7,layout:editor.layout};editor.saveState='saved';live.updating=true;h.render();assert.equal(h.button('Download PDF').props.disabled,true);
- live.pdf=artifact(7);live.updating=false;h.render();assert.equal(h.button('Download PDF').props.disabled,false);
- h.button('Download PDF').props.onPress();await h.pump();assert.equal(shared,live.pdf);assert.equal(retained,1);assert.equal(released,1);
- h.button('Open PDF preview').props.onPress();await h.pump();assert.deepEqual(h.calls.at(-1),['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnToEditor:'1'}}]);
- h.blur();h.focus();await h.pump();assert.equal(h.find(n=>n.type==='EditorControlsPanel').props.open,true);assert.equal(h.find(n=>n.props.accessibilityLabel==='Design & Layout').props.accessibilityState.selected,true);
+test('local renderer and tray survive tool changes and PDF return without automatic PDF or score requests',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());const document=makeDocument();let exports=0,scoreRequests=0;
+ const editor={document,resume:document.resume,layout:document.layout,layoutDraft:document.layout,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,
+   updateLayoutDraft:next=>{editor.layoutDraft=next;},saveForPdf:async()=>{exports++;return{...document,revision:7,layout:editor.layoutDraft};},refreshAnalysis:()=>{scoreRequests++;}};
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor},'@/lib/editor/useLivePreview':{useLivePreview:()=>{throw Error('Editor must not generate PDFs in the background');}}});
+ assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.pdf,null);
+ assert.equal(h.find(n=>n.props.testID==='live-editor-tray').props.style.display,'none');
+ h.button('Templates').props.onPress();h.render();
+ const design=h.find(n=>n.type==='DesignLayout'&&n.props.mode==='templates');
+ for(const template of ['modern','swiss-single','clean']){design.props.onChange({...editor.layoutDraft,template});h.render();assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.layout.template,template);}
+ h.find(n=>n.type==='CvPreviewSurface').props.onScrollOffset(284);h.render();
+ h.button('Format').props.onPress();h.render();const format=h.find(n=>n.type==='DesignLayout'&&n.props.mode==='format');
+ format.props.onChange({...editor.layoutDraft,pageSize:'LETTER',margins:{...editor.layoutDraft.margins,top:12},fontSize:{...editor.layoutDraft.fontSize,base:4}});h.render();
+ assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.layout.pageSize,'LETTER');assert.equal(exports,0);assert.equal(scoreRequests,0);assert.deepEqual(editor.layout,document.layout);
+ h.button('Format').props.onPress();h.render();assert.equal(h.find(n=>n.props.testID==='live-editor-tray').props.style.display,'none');
+ assert.ok(h.find(n=>n.type==='DesignLayout'&&n.props.mode==='format'),'closing keeps the controls mounted');
+ h.button('Format').props.onPress();h.render();h.button('Open PDF preview').props.onPress();await h.pump();
+ assert.equal(exports,1);assert.deepEqual(h.calls.at(-1),['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnToEditor:'1'}}]);
+ h.blur();h.focus();await h.pump();assert.equal(h.button('Format').props.accessibilityState.selected,true);assert.equal(h.find(n=>n.props.testID==='live-editor-tray').props.style.display,'flex');assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.scrollOffset,284);
 });
 
 test('the full PDF viewer returns to the existing editor without pushing a second editor instance',async(t)=>{
  const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,revision:'6',returnToEditor:'1'};
  h.open('app/cv-editor/[id]/preview.tsx',{'@/lib/editor/api':{getEditorDocument:async()=>makeDocument()},'@/lib/editor/pdf':{loadEditorPdf:async()=>({uri:'file:///saved.pdf',revision:6,dispose:async()=>{}}),shareEditorPdf:async()=>{}}});
- await h.pump();h.button('Edit Resume').props.onPress();assert.deepEqual(h.calls,[['back']]);
+ await h.pump();h.button('Done, return to editor').props.onPress();assert.deepEqual(h.calls,[['back']]);
 });
 
 test('the non-blocking panel resizes within limits and retains its body and height when closed',()=>{
@@ -712,4 +724,30 @@ test('the non-blocking panel resizes within limits and retains its body and heig
  props.open=false;h.render();assert.equal(shell().props.style.display,'none');assert.ok(h.find(n=>n.type==='PersistentControls'));
  props.open=true;h.render();assert.equal(shell().props.style.height,318);h.button('Expand controls').props.onPress();h.render();assert.equal(shell().props.style.height,398);h.button('Expand controls').props.onPress();h.render();assert.equal(shell().props.style.height,408);
  h.button('Shrink controls').props.onPress();h.render();assert.equal(shell().props.style.height,328);h.button('Close controls').props.onPress();assert.equal(closes,1);h.dispose();
+});
+
+test('an unsupported saved template is preserved and offers explicit PDF without starting background generation',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());const document=makeDocument();document.layout={...document.layout,template:'latex'};document.layout_options.templates.push('latex');let exports=0;
+ const editor={document,resume:document.resume,layout:document.layout,layoutDraft:document.layout,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,saveForPdf:async()=>{exports++;return document;}};
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+ assert.equal(h.find(n=>n.type==='CvPreviewSurface'),undefined);assert.equal(exports,0);assert.match(h.getText(),/Classic is available in PDF preview/);assert.equal(editor.layoutDraft.template,'latex');
+ h.button('View template in PDF').props.onPress();await h.pump();assert.equal(exports,1);assert.equal(h.calls.at(-1)[1].params.revision,'6');
+});
+
+test('plain multiline fields report the focused native selection line to the keyboard-aware section scroller',()=>{
+ const h=harness();h.mocks['react-native'].Platform.OS='ios';const caret=[];
+ h.open('components/editor/EditorTextField.tsx',{'@/components/ui/input':{Input:'Input'}},'EditorTextField',{label:'Summary',value:'first line\nsecond line\nlast line',onChangeText:()=>{},onCaret:y=>caret.push(y)});
+ h.find(n=>n.type==='View'&&n.props.ref).props.ref.current={measureInWindow:callback=>callback(0,200,300,100)};
+ const mirror=h.find(n=>n.type==='Text'&&n.props.onTextLayout),input=h.find(n=>n.type==='Input');
+ mirror.props.onTextLayout({nativeEvent:{lines:[{text:'first line\n',y:12,height:24},{text:'second line\n',y:36,height:24},{text:'last line',y:60,height:24}]}});
+ assert.equal(caret.length,0);input.props.onFocus();input.props.onSelectionChange({nativeEvent:{selection:{start:25,end:25}}});assert.equal(caret.at(-1),284);
+ input.props.onBlur();const before=caret.length;input.props.onSelectionChange({nativeEvent:{selection:{start:0,end:0}}});assert.equal(caret.length,before);h.dispose();
+});
+
+test('the inline Experience editor reuses the rich bullet field and keeps sibling content intact',()=>{
+ const {renderToStaticMarkup}=require('react-dom/server'),h=harness();let rich,changed;const box=props=>React.createElement('div',null,props.children);
+ const {SectionEditor}=load('components/editor/SectionEditor.tsx',{...h.mocks,react:React,'react-native':{...h.mocks['react-native'],View:box,Pressable:box,KeyboardAvoidingView:box,ScrollView:box},'@/components/ui/text':{Text:props=>React.createElement('span',null,props.children)},'./RichTextField':{RichTextField:props=>{rich=props;return React.createElement('textarea',{value:props.value,readOnly:true});}},'@/components/ui/button':{Button:props=>React.createElement('button',null,props.children)},'@/lib/icons/LucideIcon':{__esModule:true,default:()=>null}});
+ const value=[{id:1,title:'Engineer',company:'Keep company',description:['<strong>Original</strong> bullet','Keep second bullet'],descriptionStyles:['plain','bullet']}];
+ renderToStaticMarkup(React.createElement(SectionEditor,{inline:true,section:{key:'workExperience',label:'Experience',value,hidden:false,personal:false,custom:false,sectionType:'itemList'},target:{path:[0,'description',0],label:'Experience bullet 1'},saveLabel:'Saving…',onChange:next=>changed=next,onClose:()=>{},onRename:()=>{},actions:{label:'Experience',canMoveUp:true,canMoveDown:true,onRename:()=>{},onMove:()=>{}}}));
+ assert.equal(rich.value,value[0].description[0]);rich.onChangeText('<em>Updated</em> full bullet');assert.equal(changed[0].description[0],'<em>Updated</em> full bullet');assert.equal(changed[0].description[1],'Keep second bullet');assert.equal(changed[0].company,'Keep company');assert.deepEqual(changed[0].descriptionStyles,['plain','bullet']);h.dispose();
 });

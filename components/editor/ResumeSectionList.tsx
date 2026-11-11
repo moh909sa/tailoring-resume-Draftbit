@@ -20,7 +20,7 @@ export function ResumeSectionList({sections,onOpen,onActions,onAdd}: {
         </View>
         <LucideIcon name="ChevronRight" size={16} className="text-muted-foreground"/>
       </Pressable>
-      {!section.personal ? <SectionActions label={section.label} onPress={()=>onActions(section.key)}/> : <View className="h-11 w-11 shrink-0"/>}
+      {!section.personal ? <SectionActions label={section.label} onPress={()=>onActions(section.key)}/> : <View className="h-11 w-11 shrink-0 native:h-[44px] native:w-[44px]"/>}
     </View>)}
     <Pressable accessibilityRole="button" accessibilityLabel="Add Custom Section" onPress={onAdd} className="min-h-14 flex-row items-center gap-3 border-t border-border bg-card px-4 py-4 active:bg-muted">
       <LucideIcon name="Plus" size={20} className="text-primary"/><Text className="text-body font-medium text-primary">Add Custom Section</Text>
