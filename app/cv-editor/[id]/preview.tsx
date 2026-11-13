@@ -17,7 +17,7 @@ import Icon from "@/lib/icons/LucideIcon";
 type Preview = { ownerId: string; id: string; layout: EditorLayout | undefined; requestedRevision: number | undefined; title: string; pdf: EditorPdf };
 
 export default function CvPdfPreview() {
-  const params = useLocalSearchParams<{ id?: string | string[]; revision?: string | string[]; returnTo?: string; returnToEditor?: string }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; revision?: string | string[]; returnTo?: string; returnToEditor?: string; editorReturnTo?: string }>();
   const route = readEditorRoute(params);
   const id = route.id;
   const expectedRevision = route.revision;
@@ -33,7 +33,11 @@ export default function CvPdfPreview() {
   const [attempt, setAttempt] = useState(0);
   const pdf = !routeError && preview && preview.ownerId === ownerId && preview.id === id && preview.requestedRevision === expectedRevision ? preview.pdf : null;
   const goBack = () => {
-    if (params.returnToEditor === "1" && router.canGoBack()) {router.back();return;}
+    if (params.returnToEditor === "1" && id) {
+      if(router.canGoBack())router.back();
+      else router.replace({pathname:"/cv-editor/[id]",params:{id,returnTo:params.editorReturnTo === "tailor"?"tailor":"library"}});
+      return;
+    }
     if (!id) router.replace("/(tabs)/library/tailored-cvs");
     else if (routeError) router.replace({ pathname: "/cv-editor/[id]", params: { id } });
     else if (params.returnTo === "library" || !router.canGoBack()) router.replace("/(tabs)/library/tailored-cvs");
@@ -41,7 +45,7 @@ export default function CvPdfPreview() {
   };
   const editResume = () => {
     if (!id || routeError || sharing) return;
-    if(params.returnToEditor === "1" && router.canGoBack()){router.back();return;}
+    if(params.returnToEditor === "1"){goBack();return;}
     router.push({ pathname: "/cv-editor/[id]", params: { id, returnTo: "preview", ...(params.returnTo === "library" ? {previewReturnTo:"library"} : {}) } });
   };
 
@@ -103,7 +107,7 @@ export default function CvPdfPreview() {
           <View className="flex-row items-center gap-3">
             <Pressable accessibilityRole="button" accessibilityLabel="Back" className="h-11 w-11 native:h-[44px] native:w-[44px] items-center justify-center rounded-full bg-secondary" onPress={goBack}><Icon name="ChevronLeft" className="h-5 w-5 text-foreground" /></Pressable>
             <View className="flex-1 gap-1"><Text accessibilityRole="header" numberOfLines={2} className="text-h5 text-foreground">{pdf ? preview?.title : "Your tailored CV"}</Text><Text className="text-caption text-muted-foreground">{pdf ? `${pdf.pageCount ? `${pdf.pageCount} ${pdf.pageCount === 1 ? "page" : "pages"} · ` : ""}Version ${pdf.revision}` : "PDF preview"}</Text></View>
-            {params.returnToEditor === "1" ? <Button variant="ghost" className="min-h-11 native:min-h-[44px] min-w-11" accessibilityLabel="Done, return to editor" onPress={editResume}><Text className="text-primary">Done</Text></Button> : null}
+            {params.returnToEditor === "1" ? <Button variant="ghost" className="min-h-11 native:min-h-[44px] min-w-11" accessibilityLabel="Done, return to editor" onPress={goBack}><Text className="text-primary">Done</Text></Button> : null}
           </View>
           <View className="flex-row items-center justify-between gap-3">
           <Text className="min-w-0 flex-1 text-caption text-muted-foreground">{preview?.layout ? `${layoutTemplateName(preview.layout.template)} · ${preview.layout.pageSize === "LETTER" ? "Letter" : "A4"}` : "Saved layout"}</Text>

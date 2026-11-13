@@ -131,7 +131,7 @@ export default function TailoringReviewScreen() {
   useEffect(() => {
     const savedId = run.confirmation?.tailoring_id ?? run.tailoringId;
     if (routeMatches && run.saved && savedId)
-      router.replace({ pathname: "/cv-editor/[id]/preview", params: { id: savedId, returnTo: "library" } });
+      router.replace({ pathname: "/cv-editor/[id]", params: { id: savedId, returnTo: "library" } });
   }, [run.saved, run.confirmation?.tailoring_id, run.preview?.tailoring_id]);
 
   function close() {

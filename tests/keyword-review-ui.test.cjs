@@ -1150,7 +1150,7 @@ test("Changes preserves Back, explicit save, loading, errors, expiration and ack
   assert.match(text(render()), /Your tailored CV is saved/);
 });
 
-test("only a saved acknowledgement opens the PDF preview using its confirmed CV ID", () => {
+test("only a saved acknowledgement opens Edit Resume using its confirmed CV ID", () => {
   const { run, render, flushEffects, navigation } = screenHarness();
   run.step = 1;
   run.preview.review.preview_expires_at = null;
@@ -1171,7 +1171,7 @@ test("only a saved acknowledgement opens the PDF preview using its confirmed CV 
   render();
   flushEffects();
   assert.deepEqual(navigation, [
-    { pathname: "/cv-editor/[id]/preview", params: { id: run.confirmation.tailoring_id, returnTo: "library" } },
+    { pathname: "/cv-editor/[id]", params: { id: run.confirmation.tailoring_id, returnTo: "library" } },
   ]);
 });
 

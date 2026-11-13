@@ -9,9 +9,12 @@ export type EditorWorkspace = {
   fieldPath: (string | number)[] | null;
   fieldLabel: string | null;
   documentOffset: number;
+  documentZoom: number;
+  documentPanX: number;
+  panelHeight: number;
   matchSection: "overview" | "highlights";
 };
-export const emptyWorkspace = (): EditorWorkspace => ({tool:"content",trayOpen:false,sectionKey:null,fieldPath:null,fieldLabel:null,documentOffset:0,matchSection:"overview"});
+export const emptyWorkspace = (): EditorWorkspace => ({tool:"content",trayOpen:true,sectionKey:null,fieldPath:null,fieldLabel:null,documentOffset:0,documentZoom:1,documentPanX:0,panelHeight:190,matchSection:"overview"});
 export type EditorState = {
   document: EditorDocument | null;
   resume: JsonObject | null;
@@ -117,6 +120,9 @@ export class CvEditorSession {
             fieldPath:Array.isArray(w.fieldPath) && w.fieldPath.every(k=>typeof k === "string" || Number.isSafeInteger(k)) ? w.fieldPath : null,
             fieldLabel:typeof w.fieldLabel === "string" ? w.fieldLabel : null,
             documentOffset:typeof w.documentOffset === "number" && Number.isFinite(w.documentOffset) ? Math.max(0,w.documentOffset) : 0,
+            documentZoom:typeof w.documentZoom === "number" && Number.isFinite(w.documentZoom) ? Math.max(1,Math.min(4,w.documentZoom)) : 1,
+            documentPanX:typeof w.documentPanX === "number" && Number.isFinite(w.documentPanX) ? Math.max(0,w.documentPanX) : 0,
+            panelHeight:typeof w.panelHeight === "number" && Number.isFinite(w.panelHeight) ? Math.max(0,w.panelHeight) : 190,
             matchSection:w.matchSection === "highlights" ? "highlights" : "overview",
           }});
           this.accept(doc, false);

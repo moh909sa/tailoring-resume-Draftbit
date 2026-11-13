@@ -53,3 +53,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Design & Layout saves full revision-bound formatting through the mobile editor API; preview, download and readability use that saved layout without paper overrides.
 
 - Edit Resume keeps a local structured document above compact tools; formatting trials stay separate from content autosave and commit only for explicit PDF export.
+
+- Saved CVs open directly in Edit Resume; local paginated pages, pinch/pan/Fit and a continuously resizable tools divider retain one shared document and revision-aware PDF export.

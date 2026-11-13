@@ -97,18 +97,55 @@ test('live markup retains ordered custom sections and bullet styles, safely rend
  assert.ok(!serializeLivePayload({...liveDocumentPayload(data,layout(),options),markup:'</script><script>bad</script>'}).includes('</script>'));
 });
 
-test('the document bridge scales a full long document on iPhone widths and retains position through updates and hidden PDF navigation',async()=>{
- const scroller={clientWidth:350,clientHeight:400,scrollTop:0,style:{},listeners:{},addEventListener(name,fn){this.listeners[name]=fn;}},paper={style:{},offsetHeight:2600,innerHTML:'',className:''},frame={style:{}},variables={},messages=[],observers=[];
- const document={getElementById:id=>({scroller,paper,frame})[id],body:{style:{}},documentElement:{style:{setProperty:(k,v)=>variables[k]=v}},addEventListener(){}};
- const window={addEventListener(){},ReactNativeWebView:{postMessage:raw=>messages.push(JSON.parse(raw))}};
- class ResizeObserver{constructor(callback){this.callback=callback;observers.push(this);}observe(){}}
- window.ResizeObserver=ResizeObserver;
- const context={window,document,ResizeObserver,setTimeout,clearTimeout,parent:{postMessage(){}}};
- const script=liveDocumentHtml().match(/<script>([\s\S]*)<\/script>/)[1];vm.runInNewContext(script,context);
- window.updateResume(liveDocumentPayload(resume(),layout(),{...options,offset:112}));assert.equal(scroller.scrollTop,112);assert.equal(paper.style.width,`${210*96/25.4}px`);assert.equal(frame.style.height,`${2600*(310/(210*96/25.4))}px`);
- scroller.scrollTop=227;scroller.listeners.scroll();await new Promise(resolve=>setTimeout(resolve,115));assert.equal(messages.at(-1).offset,227);
- const updated={...layout(),template:'modern',pageSize:'LETTER',fontSize:{...layout().fontSize,base:5},margins:{top:25,bottom:12,left:5,right:18}};
- window.updateResume(liveDocumentPayload(resume(),updated,options));assert.equal(scroller.scrollTop,227);assert.equal(paper.style.width,'816px');assert.match(paper.innerHTML,/--font:16px/);assert.match(paper.innerHTML,/--top:94.488/);
- scroller.clientWidth=0;scroller.clientHeight=0;scroller.scrollTop=0;scroller.listeners.scroll();observers[0].callback();
- scroller.clientWidth=350;scroller.clientHeight=400;observers[0].callback();assert.equal(scroller.scrollTop,227);assert.equal(frame.style.height,`${2600*(310/816)}px`);
+const {canvasDom,fixtureFactory}=require('./helpers/canvas-dom.cjs');
+function canvas(){const fixture=fixtureFactory(),dom=canvasDom(()=>fixture.build());fixture.set(dom);vm.runInNewContext(liveDocumentHtml().match(/<script>([\s\S]*)<\/script>/)[1],dom.context);return {dom,fixture};}
+const canvasPayload=(changes={})=>({markup:'fixture-one',paperWidth:300,paperHeight:400,editable:true,initialZoom:1,initialPanX:0,initialOffset:0,background:'#222',accent:'#65f',...changes});
+
+test('pagination preserves every character, rich mark, link, separator and section order across distinct measured page boundaries',()=>{
+ for(const paperHeight of [400,360]){
+  const {dom,fixture}=canvas();dom.context.window.updateResume(canvasPayload({paperHeight}));const pages=dom.ids.pages.children;
+  assert.ok(pages.length>1);assert.equal(pages.map(page=>page.textContent).join(''),fixture.build().textContent);
+  for(const page of pages){assert.equal(page.style.height,paperHeight+'px');assert.ok(page.firstElementChild.offsetHeight<=paperHeight+.5);assert.match(page.getAttribute('aria-label'),/Resume page/);}
+  const marks=dom.ids.pages.querySelectorAll('strong').map(node=>node.textContent).join('');assert.equal(marks,fixture.build().querySelectorAll('strong').map(node=>node.textContent).join(''));
+  const links=dom.ids.pages.querySelectorAll('a');assert.ok(links.length>4);assert.ok(links.every(link=>link.getAttribute('href')==='https://example.test'));
+  assert.ok(dom.ids.controls.children.length>4,'continued sections keep a pencil on later pages');assert.ok(dom.ids.controls.children.every(button=>parseFloat(button.style.left)>=parseFloat(dom.ids.pages.style.left)+300*1));
+ }
+});
+
+test('pinch anchors the touched line, pans independently, fits again and never repaginates or calls an API during gestures',()=>{
+ const {dom}=canvas(),scroller=dom.ids.scroller;dom.context.window.updateResume(canvasPayload({initialOffset:180}));
+ const evt=touches=>({touches,preventDefault(){}}),a={clientX:120,clientY:150},b={clientX:220,clientY:250};
+ const beforeScale=Number(dom.ids.pages.style.transform.match(/scale\(([^)]+)/)[1]),initialOrigin=parseFloat(dom.ids.pages.style.left),anchorX=(170-initialOrigin)/beforeScale,anchorY=(180+200-16)/beforeScale;
+ scroller.listeners.touchstart(evt([a,b]));scroller.listeners.touchmove(evt([{clientX:70,clientY:100},{clientX:270,clientY:300}]));scroller.listeners.touchend(evt([]));
+ const view=dom.messages.filter(message=>message.type==='viewport').at(-1);assert.equal(view.zoom,2);const afterScale=beforeScale*2;
+ assert.ok(Math.abs((view.x+170-12)/afterScale-anchorX)<1e-6);assert.ok(Math.abs((view.y+200-16)/afterScale-anchorY)<1e-6);assert.equal(dom.ids.fit.style.display,'flex');
+ scroller.listeners.touchstart(evt([{clientX:200,clientY:200}]));scroller.listeners.touchmove(evt([{clientX:150,clientY:160}]));scroller.listeners.touchend(evt([]));assert.equal(scroller.scrollLeft,view.x+50);assert.equal(scroller.scrollTop,view.y+40);
+ const builds=dom.sourceBuilds;dom.context.window.updateResume(canvasPayload());assert.equal(dom.sourceBuilds,builds);assert.equal(dom.messages.filter(message=>message.type==='pages').length,1);
+ dom.ids.fit.listeners.click();assert.equal(dom.messages.at(-1).zoom,1);assert.equal(dom.ids.fit.style.display,'none');
+});
+
+test('PDF remount restores zoom/pan/page position while hidden frame resizes do not erase the workspace',()=>{
+ const {dom}=canvas();dom.context.window.updateResume(canvasPayload({initialZoom:2.25,initialPanX:120,initialOffset:750}));
+ assert.equal(dom.ids.pages.style.transform,"scale(2.25)");assert.equal(dom.ids.scroller.scrollLeft,120);assert.equal(dom.ids.scroller.scrollTop,750);
+ dom.ids.scroller.clientWidth=0;dom.ids.scroller.clientHeight=0;dom.ids.scroller.scrollTop=0;dom.ids.scroller.listeners.scroll();dom.observers[0]();
+ dom.ids.scroller.clientWidth=390;dom.ids.scroller.clientHeight=420;dom.observers[0]();assert.equal(dom.ids.scroller.scrollTop,750);assert.equal(dom.ids.scroller.scrollLeft,120);
+});
+
+test('zoom, panel size and document position recover per document without a layout mutation or score request',async(t)=>{
+ const h=harness();t.after(()=>h.session.dispose());await h.session.restore();h.session.updateWorkspace({documentZoom:2.4,documentPanX:125,documentOffset:640,panelHeight:282,tool:'format',trayOpen:true});await tick();h.session.dispose();await tick();
+ const reopened=new CvEditorSession(h.deps);t.after(()=>reopened.dispose());await reopened.restore();assert.equal(reopened.snapshot.workspace.documentZoom,2.4);assert.equal(reopened.snapshot.workspace.documentPanX,125);assert.equal(reopened.snapshot.workspace.documentOffset,640);assert.equal(reopened.snapshot.workspace.panelHeight,282);assert.equal(h.saves.length,0);assert.equal(h.analyses.length,0);
+});
+
+
+test('short entries stay whole, split entries retain leading/trailing bullet pairs, and later-page controls point to the same role',()=>{
+ let dom;
+ const build=()=>{const el=(tag,cls,text)=>{const node=new dom.Element(tag,{class:cls});if(text)node.appendChild(new dom.TextNode(text));return node;};const article=el('article','modern'),section=el('section','resume-section');section.setAttribute('data-section','workExperience');const heading=el('div','section-heading');heading.appendChild(el('h2','','Experience'));const button=el('button','pencil');for(const [key,value] of Object.entries({'data-key':'workExperience','data-path':'[]','data-label':'Experience'}))button.setAttribute(key,value);heading.appendChild(button);section.appendChild(heading);
+ for(let role=0;role<3;role++){const entry=el('div','entry');entry.setAttribute('data-field-path',JSON.stringify([role]));entry.setAttribute('data-resume-item',role===0?'':'split');const header=el('div','entry-heading');header.appendChild(el('strong','','Role '+role));entry.appendChild(header);const bullets=el('div','bullets');const count=role===0?3:4;
+  for(let index=0;index<count;index++){const bullet=el('div','bullet'+(count>=4&&(index===0||index===count-2)?' keep-next':''));const content=el('div','bullet-text'),paragraph=el('div','paragraph','Role '+role+' bullet '+index+' '+('evidence '.repeat(role===0?17:role===1?8:12)));content.appendChild(paragraph);bullet.appendChild(content);bullets.appendChild(bullet);}entry.appendChild(bullets);section.appendChild(entry);
+ }article.appendChild(section);return article;};
+ dom=canvasDom(build);vm.runInNewContext(liveDocumentHtml().match(/<script>([\s\S]*)<\/script>/)[1],dom.context);dom.context.window.updateResume(canvasPayload());
+ const pages=dom.ids.pages.children;assert.equal(pages.map(page=>page.textContent).join(''),build().textContent);
+ assert.equal(pages.filter(page=>page.querySelectorAll('[data-field-path]').some(node=>node.getAttribute('data-field-path')==='[0]')).length,1);
+ const continued=dom.ids.controls.children.filter(button=>button.getAttribute('data-path')==='[2]');assert.ok(continued.length>=1);
+ for(const page of pages){const text=page.textContent;for(const role of [1,2]){if(text.includes('Role '+role+' bullet 0'))assert.ok(text.includes('Role '+role+' bullet 1'));if(text.includes('Role '+role+' bullet 2'))assert.ok(text.includes('Role '+role+' bullet 3'));}}
 });

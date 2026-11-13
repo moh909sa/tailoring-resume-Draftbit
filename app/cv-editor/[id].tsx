@@ -17,6 +17,7 @@ import type { FieldTarget } from "@/lib/editor/liveDocument";
 import { SectionEditor } from "@/components/editor/SectionEditor";
 import { AddCustomSectionSheet, RenameSectionSheet, SectionActionsMenu } from "@/components/editor/SectionControls";
 import { ResumeSectionList } from "@/components/editor/ResumeSectionList";
+import { EditorControlsPanel } from "@/components/editor/EditorControlsPanel";
 import { CvPreviewSurface } from "@/components/editor/CvPreviewSurface";
 import { LiveCvRenderer } from "@/components/editor/LiveCvRenderer";
 import { DesignLayout } from "@/components/editor/DesignLayout";
@@ -62,21 +63,22 @@ export default function CvEditorScreen() {
   },[session?.user.id,id]);
   const leave=()=>{
     previewGeneration.current++;Keyboard.dismiss();void editor.flush();
-    if(returnTo === "preview" && router.canGoBack())router.back();
-    else router.replace("/(tabs)/library/tailored-cvs");
+    if(returnTo === "library" && router.canGoBack())router.dismissTo("/(tabs)/library/tailored-cvs");
+    else if(router.canGoBack())router.back();
+    else router.replace(returnTo === "tailor"?"/(tabs)/tailor":"/(tabs)/library/tailored-cvs");
   };
   const openSection=(key:string,target?:FieldTarget)=>{
     const found=sections.find(s=>key === "skills" ? /^(additional|technicalSkills|professionalSkills|skills)$/.test(s.key) : key === "workExperience" ? /workExperience|experience$/.test(s.key) : s.key === key);
     if(!found)return;
     returnOffset.current=listOffset.current;
-    setWorkspace({tool:"content",trayOpen:true,sectionKey:found.key,fieldPath:target?.path ?? null,fieldLabel:target?.label ?? null});
+    setWorkspace({tool:"content",trayOpen:true,panelHeight:workspace.panelHeight || 190,sectionKey:found.key,fieldPath:target?.path ?? null,fieldLabel:target?.label ?? null});
   };
   const closeSection=()=>{
     Keyboard.dismiss();setWorkspace({sectionKey:null,fieldPath:null,fieldLabel:null});
     contentScroll.current?.scrollTo({y:returnOffset.current,animated:false});void editor.flush();
   };
   const selectTool=(tool:EditorWorkspace["tool"])=>{
-    Keyboard.dismiss();setWorkspace({tool,trayOpen:workspace.tool !== tool || !workspace.trayOpen});
+    Keyboard.dismiss();setWorkspace({tool,trayOpen:workspace.tool !== tool || !workspace.trayOpen,panelHeight:workspace.panelHeight || 190});
   };
   const addSkill = (skill:string) => {
     if(!editor.resume || !document) return;
@@ -116,7 +118,7 @@ export default function CvEditorScreen() {
     onDuplicate:section.custom ? ()=>duplicateSection(section.key) : undefined,
   });
   const rename = (key:string,name:string) => {if(editor.resume) editor.updateResume(renameSection(editor.resume,key,name));};
-  const openCreatedSection = () => {if(pendingSection.current) {setWorkspace({tool:"content",trayOpen:true,sectionKey:pendingSection.current,fieldPath:null,fieldLabel:null});pendingSection.current=null;}};
+  const openCreatedSection = () => {if(pendingSection.current) {setWorkspace({tool:"content",trayOpen:true,panelHeight:workspace.panelHeight || 190,sectionKey:pendingSection.current,fieldPath:null,fieldLabel:null});pendingSection.current=null;}};
   const preview=async()=>{
     if(openingPreview)return;
     const generation=++previewGeneration.current;
@@ -125,17 +127,15 @@ export default function CvEditorScreen() {
       if(editor.resume){const complete=withSectionMetadata(editor.resume);if(complete !== editor.resume)editor.updateResume(complete);}
       const saved=await editor.saveForPdf();
       if(!mounted.current || generation !== previewGeneration.current)return;
-      if(saved)router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),returnToEditor:"1"}});
+      if(saved)router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),returnToEditor:"1",...(returnTo === "library" || returnTo === "tailor" ? {editorReturnTo:returnTo} : {})}});
       else setActionError("Your PDF could not be saved yet. Your text and layout are kept here. Retry PDF when connected.");
     } catch(error){if(mounted.current && generation === previewGeneration.current)setActionError(error instanceof Error ? error.message : "Your PDF could not be saved. Try again.");}
     finally{if(mounted.current && generation === previewGeneration.current)setOpeningPreview(false);}
   };
-  const trayHeight=Math.min(workspace.tool === "templates" ? 210 : workspace.tool === "format" ? 270 : 310,Math.max(100,stageHeight*.5));
-  const trayStyle={height:workspace.trayOpen?trayHeight:0,display:workspace.trayOpen?"flex" as const:"none" as const};
   const canRender=!!layout && supportsLiveTemplate(layout.template);
   return <AppScreen>
-    <View className="h-14 native:h-[56px] flex-row items-center gap-1 border-b border-border bg-background px-2">
-      <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 native:h-[44px] native:w-[44px]" accessibilityLabel={returnTo === "preview" ? "Back to saved preview" : "Back to saved CVs"} disabled={openingPreview} onPress={leave}><LucideIcon name="ChevronLeft" size={22} className="text-foreground"/></Button>
+    <View className="h-14 native:h-[56px] shrink-0 flex-row items-center gap-1 border-b border-border bg-background px-2">
+      <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 native:h-[44px] native:w-[44px]" accessibilityLabel={returnTo === "preview" ? "Back to saved preview" : returnTo === "tailor" ? "Back to Tailor" : "Back to saved CVs"} disabled={openingPreview} onPress={leave}><LucideIcon name="ChevronLeft" size={22} className="text-foreground"/></Button>
       <View className="min-w-0 flex-1"><Text accessibilityRole="header" className="text-editor-title text-foreground">Edit Resume</Text><Text accessibilityLiveRegion="polite" numberOfLines={1} className="text-caption text-muted-foreground">{!document || editor.error ? (editor.loading?"Opening saved CV…":session?"Saved CV":"Sign in to edit") : openingPreview ? "Saving PDF…" : statusLabels[editor.saveState]}{document && !editor.error && editor.layoutDraftDirty ? " · Layout on device" : ""}</Text></View>
       {document && editor.resume && !editor.error ? <Button variant="ghost" accessibilityLabel="Open PDF preview" disabled={openingPreview} className="min-h-11 native:min-h-[44px] min-w-16 flex-row gap-1.5 px-3" onPress={()=>void preview()}>{openingPreview?<ActivityIndicator size="small"/>:<LucideIcon name="FileText" size={17} className="text-primary"/>}<Text className="text-body font-semibold text-primary">PDF</Text></Button>:null}
     </View>
@@ -146,14 +146,14 @@ export default function CvEditorScreen() {
       {editor.saveState === "conflict" ? <View className="gap-2 border-b border-border bg-background px-4 py-3"><Text className="text-caption text-foreground">A newer version is saved. Choose how to continue; your layout trial stays here.</Text><View className="flex-row gap-2"><Button className="min-h-11 native:min-h-[44px] flex-1" onPress={()=>void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" className="min-h-11 native:min-h-[44px] flex-1" onPress={()=>void editor.resolveConflict("server")}><Text>Use saved content</Text></Button></View></View>:null}
       <View className="flex-1 bg-background" onLayout={event=>setStageHeight(event.nativeEvent.layout.height)}>
         <View className="flex-1 bg-muted">
-          {canRender && !viewError ? <CvPreviewSurface key={`${session?.user.id}:${document.tailoring_id}:${rendererAttempt}`} renderer={LiveCvRenderer} resume={editor.resume} layout={layout} pdf={null} error={null} editable={workspace.tool === "content" && !openingPreview} selectedKey={workspace.sectionKey} scrollOffset={workspace.documentOffset} onScrollOffset={documentOffset=>setWorkspace({documentOffset})} onSectionPress={openSection} onError={()=>setViewError(true)} onRetry={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}/>
+          {canRender && !viewError ? <CvPreviewSurface key={`${session?.user.id}:${document.tailoring_id}:${rendererAttempt}`} renderer={LiveCvRenderer} resume={editor.resume} layout={layout} pdf={null} error={null} editable={workspace.tool === "content" && !openingPreview} selectedKey={workspace.sectionKey} scrollOffset={workspace.documentOffset} zoom={workspace.documentZoom} panX={workspace.documentPanX} onViewportChange={view=>setWorkspace({documentOffset:view.y,documentPanX:view.x,documentZoom:view.zoom})} onScrollOffset={documentOffset=>setWorkspace({documentOffset})} onSectionPress={openSection} onError={()=>setViewError(true)} onRetry={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}/>
           : <View className="flex-1 items-center justify-center gap-3 bg-muted px-6"><LucideIcon name="FileText" size={28} className="text-muted-foreground"/><Text className="text-center text-body text-foreground">{viewError?"The live document could not load.":layout?`${layoutTemplateName(layout.template)} is available in PDF preview.`:"Reload your CV to see its layout."}</Text><Text className="text-center text-caption text-muted-foreground">{layout?"Your saved content and template are preserved.":"Your text edits are kept on this device."}</Text>{viewError?<Button variant="outline" onPress={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}><Text>Retry live view</Text></Button>:null}<Button variant="outline" className="min-h-11 native:min-h-[44px]" disabled={openingPreview} onPress={()=>layout?void preview():void editor.reload()}><Text>{layout?"View template in PDF":"Reload layout"}</Text></Button></View>}
         </View>
-        <View className="min-h-7 flex-row items-center justify-between gap-2 bg-background px-4 py-1"><Text className="text-caption text-muted-foreground">{layout?`${layoutTemplateName(layout.template)} · ${layout.pageSize === "LETTER"?"Letter":"A4"}`:"Live view"}</Text><Text className="text-caption text-muted-foreground">PDF shows final page breaks</Text></View>
+        <EditorControlsPanel open={workspace.trayOpen} height={workspace.panelHeight ?? 190} availableHeight={stageHeight} onHeightChange={height=>setWorkspace({trayOpen:height>0,panelHeight:height>0?height:workspace.panelHeight || 190})} toolbar={
         <View accessibilityRole="tablist" className="flex-row items-center border-t border-border bg-background px-2">
           {tools.map(tool=><Pressable key={tool.key} accessibilityRole="tab" accessibilityLabel={tool.label} accessibilityState={{selected:workspace.tool === tool.key,expanded:workspace.tool === tool.key && workspace.trayOpen}} disabled={openingPreview} onPress={()=>selectTool(tool.key)} className="min-h-12 native:min-h-[44px] min-w-0 flex-1 flex-row items-center justify-center gap-1.5 bg-background px-1"><LucideIcon name={tool.icon} size={16} className={workspace.tool === tool.key?"text-primary":"text-muted-foreground"}/><Text className={cn("text-caption font-medium",workspace.tool === tool.key?"text-primary":"text-muted-foreground")}>{tool.label}</Text><LucideIcon name={workspace.tool === tool.key && workspace.trayOpen?"ChevronDown":"ChevronUp"} size={12} className="text-muted-foreground"/></Pressable>)}
         </View>
-        <View testID="live-editor-tray" pointerEvents={openingPreview || !workspace.trayOpen?"none":"auto"} accessibilityElementsHidden={!workspace.trayOpen} importantForAccessibility={workspace.trayOpen?"auto":"no-hide-descendants"} aria-hidden={!workspace.trayOpen} className="overflow-hidden border-t border-border bg-background" style={trayStyle}>
+        }>
           <View testID="editor-content-controls" className={cn("flex-1 bg-background",workspace.tool === "content"?"flex":"hidden")}>
             <View className={cn("flex-1 bg-background",section?"hidden":"flex")}>
               <View className="min-h-11 native:min-h-[44px] flex-row items-center justify-between gap-2 bg-background px-4"><Text className="text-caption text-muted-foreground">Tap a pencil or choose a section</Text><Button variant="ghost" className="min-h-11 native:min-h-[44px] flex-row gap-1 px-1" onPress={()=>setWorkspace({tool:"match",trayOpen:true})}><LucideIcon name="ChartNoAxesCombined" size={15} className="text-primary"/><Text className="text-caption font-medium text-primary">Job Match</Text></Button></View>
@@ -167,7 +167,7 @@ export default function CvEditorScreen() {
             <View className="flex-row border-b border-border bg-background px-3">{([['overview','Overview'],['highlights','Keyword Highlights']] as const).map(([key,label])=><Pressable key={key} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{selected:workspace.matchSection === key}} onPress={()=>setWorkspace({matchSection:key})} className={cn("min-h-11 native:min-h-[44px] flex-1 items-center justify-center border-b-2 bg-background px-1",workspace.matchSection === key?"border-primary":"border-transparent")}><Text className={cn("text-caption",workspace.matchSection === key?"text-primary":"text-muted-foreground")}>{label}</Text></Pressable>)}</View>
             <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 pb-6 pt-3" keyboardShouldPersistTaps="handled"><JobMatch section={workspace.matchSection} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={()=>void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection}/></ScrollView>
           </View>
-        </View>
+        </EditorControlsPanel>
         <View className="bg-background" style={{height:Math.max(insets.bottom,6)}}/>
       </View>
     </KeyboardAvoidingView>}
@@ -177,7 +177,7 @@ export default function CvEditorScreen() {
       if(!editor.resume)return;
       const result=addCustomSection(editor.resume,name,type);editor.updateResume(result.resume);returnOffset.current=listOffset.current;
       if(Platform.OS === "ios")pendingSection.current=result.key;
-      else setWorkspace({tool:"content",trayOpen:true,sectionKey:result.key,fieldPath:null,fieldLabel:null});
+      else setWorkspace({tool:"content",trayOpen:true,panelHeight:workspace.panelHeight || 190,sectionKey:result.key,fieldPath:null,fieldLabel:null});
       setAddingSection(false);
     }} onDismiss={openCreatedSection} onClose={()=>setAddingSection(false)}/>:null}
     <AccountSheet visible={showSignIn} onClose={()=>{setShowSignIn(false);void editor.reload();}}/>

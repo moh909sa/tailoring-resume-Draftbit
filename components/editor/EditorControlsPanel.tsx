@@ -1,28 +1,30 @@
-import { useRef, useState, type ReactNode } from "react";
-import { PanResponder, View } from "react-native";
-import { Button } from "@/components/ui/button";
-import LucideIcon from "@/lib/icons/LucideIcon";
+import { useEffect, useRef, type ReactNode } from "react";
+import { Animated, PanResponder, View } from "react-native";
+import { clampPanelHeight, panelLimit } from "@/lib/editor/canvasGeometry";
 
-export function EditorControlsPanel({open,availableHeight,onClose,children}: {open:boolean;availableHeight:number;onClose:()=>void;children:ReactNode}){
-  const [height,setHeight]=useState(420);
-  const max=Math.max(0,Math.floor(availableHeight*0.68)),min=Math.min(210,max);
-  const shown=Math.max(min,Math.min(max,height));
-  const bounds=useRef({min,max,height:shown});bounds.current={min,max,height:shown};
-  const origin=useRef(shown);
-  const change=(value:number)=>setHeight(Math.max(bounds.current.min,Math.min(bounds.current.max,value)));
+type Props = {open:boolean;availableHeight:number;height:number;onHeightChange:(height:number)=>void;toolbar:ReactNode;children:ReactNode};
+// Only the divider owns a drag responder. Canvas gestures and tray scrolling
+// are siblings, so neither competes with resizing. Height changes stay out of
+// the resume renderer's React state until the finger is released.
+export function EditorControlsPanel({open,availableHeight,height,onHeightChange,toolbar,children}:Props) {
+  const target=open?clampPanelHeight(height,availableHeight):0;
+  const animated=useRef(new Animated.Value(target)).current;
+  const shown=useRef(target),origin=useRef(target),dragging=useRef(false);
+  const latest=useRef({availableHeight,onHeightChange});latest.current={availableHeight,onHeightChange};
+  const resize=(value:number)=>{shown.current=clampPanelHeight(value,latest.current.availableHeight);animated.setValue(shown.current);};
+  const finish=()=>{dragging.current=false;latest.current.onHeightChange(shown.current);};
   const responder=useRef(PanResponder.create({
-    onMoveShouldSetPanResponder:(_event,gesture)=>Math.abs(gesture.dy)>4,
-    onPanResponderGrant:()=>{origin.current=bounds.current.height;},
-    onPanResponderMove:(_event,gesture)=>change(origin.current-gesture.dy),
+    onMoveShouldSetPanResponder:(_event,gesture)=>Math.abs(gesture.dy)>3 && Math.abs(gesture.dy)>Math.abs(gesture.dx),
+    onPanResponderGrant:()=>{dragging.current=true;origin.current=shown.current;},
+    onPanResponderMove:(_event,gesture)=>resize(origin.current-gesture.dy),
+    onPanResponderRelease:finish,onPanResponderTerminate:finish,
+    onPanResponderTerminationRequest:()=>false,
   })).current;
-  const panelStyle={height:open?shown:0,display:open?"flex" as const:"none" as const,borderTopWidth:open?1:0};
-  return <View pointerEvents={open?'auto':'none'} accessibilityElementsHidden={!open} importantForAccessibility={open?'auto':'no-hide-descendants'} aria-hidden={!open} className="overflow-hidden border-t border-border bg-background" style={panelStyle}>
-    <View className="min-h-11 flex-row items-center gap-1 px-3">
-      <View {...responder.panHandlers} accessible accessibilityRole="adjustable" accessibilityLabel="Resize editor controls" accessibilityHint="Drag up to expand or down to shrink" accessibilityActions={[{name:'increment',label:'Expand controls'},{name:'decrement',label:'Shrink controls'}]} onAccessibilityAction={event=>change(bounds.current.height+(event.nativeEvent.actionName==='increment'?60:-60))} className="min-h-11 flex-1 items-center justify-center"><View className="h-1 w-10 rounded-full bg-muted-foreground/40"/></View>
-      <Button variant="ghost" size="icon" className="h-11 w-11" accessibilityLabel="Expand controls" disabled={shown>=max} onPress={()=>change(shown+80)}><LucideIcon name="ChevronUp" size={18} className="text-muted-foreground"/></Button>
-      <Button variant="ghost" size="icon" className="h-11 w-11" accessibilityLabel="Shrink controls" disabled={shown<=min} onPress={()=>change(shown-80)}><LucideIcon name="ChevronDown" size={18} className="text-muted-foreground"/></Button>
-      <Button variant="ghost" size="icon" className="h-11 w-11" accessibilityLabel="Close controls" onPress={onClose}><LucideIcon name="X" size={19} className="text-foreground"/></Button>
-    </View>
-    {children}
+  useEffect(()=>{if(!dragging.current){shown.current=target;animated.setValue(target);}},[target,animated]);
+  const panelStyle={height:animated};
+  return <View className="shrink-0 bg-background">
+    <View {...responder.panHandlers} accessible accessibilityRole="adjustable" accessibilityLabel="Resize tools panel" accessibilityHint="Drag up for more tools or down for more resume" accessibilityValue={{min:0,max:Math.round(panelLimit(availableHeight)),now:Math.round(target)}} accessibilityActions={[{name:"increment",label:"Expand tools"},{name:"decrement",label:"Shrink tools"}]} onAccessibilityAction={event=>{resize(shown.current+(event.nativeEvent.actionName === "increment"?60:-60));finish();}} className="h-[44px] items-center justify-center bg-background"><View className="h-1 w-9 rounded-full bg-muted-foreground/40"/></View>
+    {toolbar}
+    <Animated.View testID="live-editor-tray" accessibilityElementsHidden={!open} importantForAccessibility={open?"auto":"no-hide-descendants"} aria-hidden={!open} className="overflow-hidden border-t border-border bg-background" style={panelStyle}>{children}</Animated.View>
   </View>;
 }

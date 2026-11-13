@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { PdfViewer } from "./PdfViewer";
 import type { EditorPdf } from "@/lib/editor/pdfTypes";
 import type { EditorLayout } from "@/lib/editor/layout";
+import type { DocumentViewport } from "@/lib/editor/canvasGeometry";
 import type { FieldTarget } from "@/lib/editor/liveDocument";
 import type { JsonObject } from "@/lib/editor/types";
 
 // A shared local Resume Matcher renderer can consume the draft directly and
 // invoke onSectionPress. It need not own sessions, saves, or PDF transport.
-export type CvPreviewRendererProps={resume:JsonObject;layout:EditorLayout|null;pdf:EditorPdf|null;onSectionPress:(key:string,target?:FieldTarget)=>void;onError:()=>void;editable?:boolean;selectedKey?:string|null;scrollOffset?:number;onScrollOffset?:(offset:number)=>void};
+export type CvPreviewRendererProps={resume:JsonObject;layout:EditorLayout|null;pdf:EditorPdf|null;onSectionPress:(key:string,target?:FieldTarget)=>void;onError:()=>void;editable?:boolean;selectedKey?:string|null;scrollOffset?:number;zoom?:number;panX?:number;onViewportChange?:(view:DocumentViewport)=>void;onScrollOffset?:(offset:number)=>void};
 export function PdfCvRenderer({pdf,onError}:CvPreviewRendererProps){
   return pdf ? <PdfViewer uri={pdf.uri} onError={onError}/> : <View className="flex-1 items-center justify-center gap-3 bg-muted"><ActivityIndicator/><Text className="text-caption text-muted-foreground">Preparing your CV…</Text></View>;
 }

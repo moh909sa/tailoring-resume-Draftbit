@@ -1,19 +1,32 @@
 # Live resume renderer
 
-`CvPreviewSurface` accepts `LiveCvRenderer` through its existing renderer prop. Web uses a sandboxed iframe; native uses the existing react-native-webview dependency in a platform module. Resume and layout messages replace paper markup without replacing the scrolling document. The source has no fetch, save, scoring, PDF, analytics or external asset calls. Local state is the actual editor resume and its separate layout trial.
+Confirmation and the normal Library/Tailor opening paths lead directly to Edit Resume. PDF is an explicit header action; saving, immutable revision export, download and readability retain the current Railway contract. Done returns to the mounted editor, or the same saved ID when navigation history is missing. No view gesture calls an API or changes resume/layout content.
 
-The paper uses 96 CSS pixels per inch, literal millimeter margins and the engine's discrete text/spacing scales. It scales to the available device width while retaining a full measured content height. It does not truncate text, set a page count or impose print page breaks. Content controls are 44 screen points even when the paper is scaled. Section pencils open the existing field editors in the tray; field-target bindings support nested entry/bullet paths without losing unknown fields or rich marks.
+`CvPreviewSurface` accepts `LiveCvRenderer` through its renderer prop. Web uses a sandboxed iframe; native uses the existing react-native-webview platform module. Structured resume and layout messages feed `lib/editor/liveDocument.ts`; `canvasRuntime.ts` owns local DOM measurement, pagination and gestures. Frame navigation is blocked, content is escaped/sanitized, and the document has no external asset/network requests.
 
-The local view is continuous. Railway's PDF is authoritative for pagination, font metrics, annotations and downloads. Noto Serif / Sans / Sans Mono are preferred when installed, with local platform fallbacks; the live renderer does not fetch fonts. Both paper sizes and all live formatting controls use the saved engine settings, but identical browser/native line wraps are not guaranteed. Unsupported saved template IDs stay intact and require explicit PDF preview.
+## Pages and editing
 
-The frame receives only escaped structured data. Plain fields remain escaped text; rich descriptions allow strong/em/u/a with safe URL schemes. A restrictive content security policy and blocked navigation prevent loading executable resume content or external assets. Web messages are checked against the frame window; native messages validate their shape. Selected fields, tools and scroll offsets live in the account/document recovery cache, separately from canonical server data.
+A4 and Letter use 96 CSS pixels per inch, literal millimeter margins, and the engine template font/spacing maps. The renderer measures full DOM blocks at the paper's natural width, then lays them into distinct paper pages with a 24-document-pixel gap. A section heading stays with leading content; short entries stay whole if they fit. Entries with at least four bullets may split, retaining the first two and last two bullets as groups, following the engine page-break hooks. Oversized paragraphs/bullets continue across pages. A full DOM clone is trimmed with Ranges to retain strong/em/u/a ancestors, all text and links; no line/page count or clipping is imposed.
+
+Every page uses the same resume ID and local editor draft. Continuation containers retain section and original entry paths. A pencil on a continued role opens that role through the existing field bindings rather than a second document or copied entry. Controls are positioned in an unscaled gutter outside the paper, remain 44 screen points at every zoom, and do not cover text/dates. Paper text is read-only; existing inline tray editors retain rich text, custom sections and section actions.
+
+Railway remains authoritative for final fonts, PDF pagination, annotations and downloads. Noto Serif / Sans / Sans Mono are preferred when installed, with local platform fallbacks; the canvas does not fetch fonts. Local page breaks can therefore differ from Chromium print metrics, locale fonts and backend pagination details. Unsupported saved templates retain explicit PDF fallback. A measured live page count is not a claim about the exported file.
+
+## View and tools
+
+The initial view fits the paper plus its control gutter to the available width. Two-finger pinch scales between 1× and 4× fit around the pinch midpoint; the document coordinate under that midpoint is retained as the fingers move. Enlarged content can pan, and vertical scrolling reaches all pages. Fit returns to width around the current reading position. Trackpad pinch/control-wheel, double-click and mouse drag support web use. Zoom moves cached controls and pages without repagination. Repagination runs only for resume/layout markup changes, not for zoom or panel resizing.
+
+The metadata strip is removed. `EditorControlsPanel` places a 44-point grab target above the existing toolbar. Only this handle owns PanResponder; Animated.Value updates height continuously and persists the chosen size on release. Tools scrolling and the canvas are siblings with independent gesture responders. Controls stay mounted when collapsed. Keyboard/screen-size constraints temporarily clamp the visible tray while retaining its preferred height; root keyboard avoidance and existing caret-aware section scrolling keep Done/fields reachable.
+
+The existing owner/document recovery cache holds tool, selected section/field, document zoom, horizontal pan, vertical offset and preferred panel height. These fields never enter PATCH payloads, score requests or layout dirty comparisons. Layout trials remain separate from the authorized content writer. PDF return reuses the same view state.
 
 ## Engine rules and attribution
 
-The template IDs, maps/presets and presentation rules are adapted from Resume-Matcher, copyright its contributors, under Apache-2.0. This is a local cross-platform renderer, rather than a copied Next.js component. Upstream sources:
+Template IDs, maps/presets and presentation rules are adapted from Resume-Matcher, copyright its contributors, under Apache-2.0. Sources:
 
-- [template-settings.ts](https://github.com/moh909sa/Resume-Matcher-Railway/blob/main/apps/frontend/lib/types/template-settings.ts): font/spacing levels, compact multipliers, paper sizes, accent colors and Clean font preset.
+- [template-settings.ts](https://github.com/moh909sa/Resume-Matcher-Railway/blob/main/apps/frontend/lib/types/template-settings.ts): font/spacing levels, compact multipliers, sizes, accents and Clean preset.
 - [resume styles](https://github.com/moh909sa/Resume-Matcher-Railway/tree/main/apps/frontend/components/resume/styles): _base, _tokens, swiss-single, clean and modern.
-- [resume components](https://github.com/moh909sa/Resume-Matcher-Railway/tree/main/apps/frontend/components/resume): centered identity, Single Column ruled headings, Clean company/role entries and plain skill lists, Modern accent rules and name underline.
+- [resume components](https://github.com/moh909sa/Resume-Matcher-Railway/tree/main/apps/frontend/components/resume): template presentation and supported content.
+- [page-break-attrs.ts](https://github.com/moh909sa/Resume-Matcher-Railway/blob/main/apps/frontend/components/resume/page-break-attrs.ts): splittable-entry threshold and bullet grouping.
 
-The adapted values are centralized in `lib/editor/documentTheme.ts`; markup and print-style adaptations are in `lib/editor/liveDocument.ts`. Preserve the upstream [Apache license](licenses/RESUME_MATCHER_APACHE_2.0.txt) with these adaptations. New templates should declare local support only after their rules are implemented; never alias an unsupported saved template to an unrelated live style.
+Values remain centralized in `documentTheme.ts`; markup and pagination are adapted locally. Preserve the upstream [Apache license](licenses/RESUME_MATCHER_APACHE_2.0.txt). Declare new local templates supported only after implementing their rules.
