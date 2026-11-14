@@ -30,6 +30,7 @@ export default function CvPdfPreview() {
   const [loading, setLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [viewError, setViewError] = useState(false);
+  const [viewerAttempt, setViewerAttempt] = useState(0);
   const [attempt, setAttempt] = useState(0);
   const pdf = !routeError && preview && preview.ownerId === ownerId && preview.id === id && preview.requestedRevision === expectedRevision ? preview.pdf : null;
   const goBack = () => {
@@ -74,7 +75,7 @@ export default function CvPdfPreview() {
         const title = [document.job.title, document.job.company].filter(Boolean).join(" · ") || "Your tailored CV";
         setPreview({ ownerId, id, layout:document.revision === revision ? document.layout : undefined, requestedRevision: expectedRevision, title, pdf: loadedPdf });
       } catch (cause) {
-        if (current) setError(controller.signal.aborted ? "Generating your PDF took too long. Please try again." : cause instanceof Error ? cause.message : "Your PDF could not be loaded. Please try again.");
+        if (current) setError(controller.signal.aborted ? "Generating your PDF took too long. Please try again." : cause instanceof Error ? cause.message : "Your saved CV could not be retrieved as a PDF. Retry PDF retrieval.");
       } finally {
         clearTimeout(timeout);
         if (current) setLoading(false);
@@ -95,7 +96,7 @@ export default function CvPdfPreview() {
     setSharing(true);
     setError(null);
     try { await shareEditorPdf(pdf); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Your PDF could not be shared. Please try again."); }
+    catch (cause) { setError(`Download failed: ${cause instanceof Error ? cause.message : "Your PDF could not be shared."} Tap Download PDF to retry the same file.`); }
     finally { setSharing(false); }
   }
 
@@ -116,7 +117,7 @@ export default function CvPdfPreview() {
         </View>
 
         {/* Loading, error and document states keep the same NativeWind provider shape. */}
-        {routeError ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{routeError}</Text><Button onPress={goBack}><Text>{id ? "Return to editor" : "Return to Tailored CVs"}</Text></Button></View> : authLoading || (ownerId && (loading || (!pdf && !error))) ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><ActivityIndicator size="large" /><Text className="text-body text-muted-foreground">Preparing your saved CV…</Text></View> : !ownerId ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Text className="text-center text-body text-muted-foreground">Please sign in to preview your CV.</Text><Button onPress={editResume}><Text>Return to editor</Text></Button></View> : pdf ? <View className="flex-1 overflow-hidden bg-muted">{viewError ? <View className="flex-1 items-center justify-center px-8"><Text className="text-center text-body text-muted-foreground">The preview could not be displayed. Your PDF is ready to download below.</Text></View> : <PdfViewer key={pdf.uri} uri={pdf.uri} onError={() => setViewError(true)} />}</View> : <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Icon name="FileText" className="h-10 w-10 text-muted-foreground" /><Text className="text-center text-h4 text-foreground">PDF unavailable</Text><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{error || "Your PDF could not be loaded."}</Text><Button onPress={() => setAttempt(value => value + 1)}><Text>Try again</Text></Button><Button variant="ghost" onPress={editResume}><Text>Edit Resume</Text></Button></View>}
+        {routeError ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{routeError}</Text><Button onPress={goBack}><Text>{id ? "Return to editor" : "Return to Tailored CVs"}</Text></Button></View> : authLoading || (ownerId && (loading || (!pdf && !error))) ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><ActivityIndicator size="large" /><Text className="text-body text-muted-foreground">Preparing your saved CV…</Text></View> : !ownerId ? <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Text className="text-center text-body text-muted-foreground">Please sign in to preview your CV.</Text><Button onPress={editResume}><Text>Return to editor</Text></Button></View> : pdf ? <View className="flex-1 overflow-hidden bg-muted">{viewError ? <View className="flex-1 items-center justify-center px-8"><Text className="text-center text-body text-muted-foreground">The PDF was retrieved, but the viewer could not display it. Retry the viewer or download the same saved PDF below.</Text><Button variant="outline" onPress={() => {setViewError(false);setViewerAttempt(value => value + 1);}}><Text>Retry viewer</Text></Button></View> : <PdfViewer key={`${pdf.uri}:${viewerAttempt}`} uri={pdf.uri} onError={() => setViewError(true)} />}</View> : <View className="flex-1 items-center justify-center gap-4 bg-background px-8"><Icon name="FileText" className="h-10 w-10 text-muted-foreground" /><Text className="text-center text-h4 text-foreground">PDF retrieval failed</Text><Text accessibilityRole="alert" className="text-center text-body text-muted-foreground">{error || "Your PDF could not be loaded."}</Text><Button onPress={() => setAttempt(value => value + 1)}><Text>Retry PDF retrieval</Text></Button><Button variant="ghost" onPress={editResume}><Text>Edit Resume</Text></Button></View>}
 
         <View className="gap-2 border-t border-border px-4 py-3">
           {pdf && ownerId && id ? <PdfReadability key={pdf.uri} ownerId={ownerId} id={id} revision={pdf.revision} /> : null}

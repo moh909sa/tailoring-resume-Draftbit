@@ -39,6 +39,7 @@ export default function CvEditorScreen() {
   const layout=editor.layoutDraft ?? editor.layout;
   const sections=editor.resume ? resumeSections(editor.resume) : [];
   const section=sections.find(s=>s.key === workspace.sectionKey);
+  const previewLock=useRef(false);
   const [showSignIn,setShowSignIn]=useState(false);
   const [menuKey,setMenuKey]=useState<string|null>(null);
   const [renameKey,setRenameKey]=useState<string|null>(null);
@@ -57,7 +58,7 @@ export default function CvEditorScreen() {
   const menuSection=sections.find(s=>s.key === menuKey && !s.personal);
   const insets=useSafeAreaInsets();
   useEffect(()=>{
-    mounted.current=true;listOffset.current=0;returnOffset.current=0;pendingSection.current=null;
+    mounted.current=true;previewLock.current=false;listOffset.current=0;returnOffset.current=0;pendingSection.current=null;
     setMenuKey(null);setRenameKey(null);setAddingSection(false);setOpeningPreview(false);setActionError(null);setViewError(false);
     return()=>{mounted.current=false;previewGeneration.current++;};
   },[session?.user.id,id]);
@@ -120,7 +121,8 @@ export default function CvEditorScreen() {
   const rename = (key:string,name:string) => {if(editor.resume) editor.updateResume(renameSection(editor.resume,key,name));};
   const openCreatedSection = () => {if(pendingSection.current) {setWorkspace({tool:"content",trayOpen:true,panelHeight:workspace.panelHeight || 190,sectionKey:pendingSection.current,fieldPath:null,fieldLabel:null});pendingSection.current=null;}};
   const preview=async()=>{
-    if(openingPreview)return;
+    if(previewLock.current)return;
+    previewLock.current=true;
     const generation=++previewGeneration.current;
     setOpeningPreview(true);setActionError(null);Keyboard.dismiss();
     try {
@@ -128,21 +130,21 @@ export default function CvEditorScreen() {
       const saved=await editor.saveForPdf();
       if(!mounted.current || generation !== previewGeneration.current)return;
       if(saved)router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),returnToEditor:"1",...(returnTo === "library" || returnTo === "tailor" ? {editorReturnTo:returnTo} : {})}});
-      else setActionError("Your PDF could not be saved yet. Your text and layout are kept here. Retry PDF when connected.");
-    } catch(error){if(mounted.current && generation === previewGeneration.current)setActionError(error instanceof Error ? error.message : "Your PDF could not be saved. Try again.");}
-    finally{if(mounted.current && generation === previewGeneration.current)setOpeningPreview(false);}
+      else setActionError("Your CV could not be saved for PDF. Your text and layout are kept here.");
+    } catch(error){if(mounted.current && generation === previewGeneration.current)setActionError(error instanceof Error ? error.message : "Your CV could not be saved for PDF. Retry saving.");}
+    finally{if(generation === previewGeneration.current){previewLock.current=false;if(mounted.current)setOpeningPreview(false);}}
   };
   const canRender=!!layout && supportsLiveTemplate(layout.template);
   return <AppScreen>
     <View className="h-14 native:h-[56px] shrink-0 flex-row items-center gap-1 border-b border-border bg-background px-2">
       <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 native:h-[44px] native:w-[44px]" accessibilityLabel={returnTo === "preview" ? "Back to saved preview" : returnTo === "tailor" ? "Back to Tailor" : "Back to saved CVs"} disabled={openingPreview} onPress={leave}><LucideIcon name="ChevronLeft" size={22} className="text-foreground"/></Button>
-      <View className="min-w-0 flex-1"><Text accessibilityRole="header" className="text-editor-title text-foreground">Edit Resume</Text><Text accessibilityLiveRegion="polite" numberOfLines={1} className="text-caption text-muted-foreground">{!document || editor.error ? (editor.loading?"Opening saved CV…":session?"Saved CV":"Sign in to edit") : openingPreview ? "Saving PDF…" : statusLabels[editor.saveState]}{document && !editor.error && editor.layoutDraftDirty ? " · Layout on device" : ""}</Text></View>
+      <View className="min-w-0 flex-1"><Text accessibilityRole="header" className="text-editor-title text-foreground">Edit Resume</Text><Text accessibilityLiveRegion="polite" numberOfLines={1} className="text-caption text-muted-foreground">{!document || editor.error ? (editor.loading?"Opening saved CV…":session?"Saved CV":"Sign in to edit") : openingPreview ? "Saving for PDF…" : statusLabels[editor.saveState]}{document && !editor.error && editor.layoutDraftDirty ? " · Layout on device" : ""}</Text></View>
       {document && editor.resume && !editor.error ? <Button variant="ghost" accessibilityLabel="Open PDF preview" disabled={openingPreview} className="min-h-11 native:min-h-[44px] min-w-16 flex-row gap-1.5 px-3" onPress={()=>void preview()}>{openingPreview?<ActivityIndicator size="small"/>:<LucideIcon name="FileText" size={17} className="text-primary"/>}<Text className="text-body font-semibold text-primary">PDF</Text></Button>:null}
     </View>
     {editor.loading ? <View className="flex-1 items-center justify-center gap-4 bg-background"><ActivityIndicator/><Text className="text-body text-muted-foreground">Opening your saved CV…</Text></View>
     : !document || !editor.resume || editor.error ? <View className="flex-1 justify-center gap-4 bg-background px-6"><Notice tone="error" message={editor.error ?? "This CV could not be opened."}/>{!editor.routeError?<Button onPress={()=>session && editor.accessStatus !== 401 ? void editor.reload() : setShowSignIn(true)}><Text>{session && editor.accessStatus !== 401?"Try again":"Sign in"}</Text></Button>:null}<Button variant="outline" onPress={leave}><Text>Return to Tailored CVs</Text></Button></View>
     : <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} enabled={Platform.OS !== "web"} className="flex-1 bg-background">
-      {editor.problem || actionError ? <View className="gap-2 bg-background px-4 py-2"><Notice tone="error" message={actionError ?? editor.problem ?? "Your edits need syncing."}/>{editor.saveState !== "conflict"?<Button variant="outline" size="sm" className="min-h-11 native:min-h-[44px]" disabled={openingPreview} onPress={()=>actionError ? void preview() : void editor.flush()}><Text>{actionError?"Retry PDF":"Retry saving"}</Text></Button>:null}</View>:null}
+      {editor.problem || actionError ? <View className="gap-2 bg-background px-4 py-2"><Notice tone="error" message={[actionError,editor.problem].filter(Boolean).join(" ") || "Your edits need syncing."}/>{editor.saveState !== "conflict"?<Button variant="outline" size="sm" className="min-h-11 native:min-h-[44px]" disabled={openingPreview} onPress={()=>actionError ? void preview() : void editor.flush()}><Text>Retry saving</Text></Button>:null}</View>:null}
       {editor.saveState === "conflict" ? <View className="gap-2 border-b border-border bg-background px-4 py-3"><Text className="text-caption text-foreground">A newer version is saved. Choose how to continue; your layout trial stays here.</Text><View className="flex-row gap-2"><Button className="min-h-11 native:min-h-[44px] flex-1" onPress={()=>void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" className="min-h-11 native:min-h-[44px] flex-1" onPress={()=>void editor.resolveConflict("server")}><Text>Use saved content</Text></Button></View></View>:null}
       <View className="flex-1 bg-background" onLayout={event=>setStageHeight(event.nativeEvent.layout.height)}>
         <View className="flex-1 bg-muted">

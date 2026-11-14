@@ -65,6 +65,8 @@ export class CvEditorSession {
   private disposed = false;
   private active = true;
   private refreshing = false;
+  private refreshTask: Promise<void> | null = null;
+  private exporting: Promise<EditorDocument | null> | null = null;
   private retries = 0;
   constructor(private readonly deps: Dependencies) {}
   get snapshot() { return this.state; }
@@ -137,7 +139,15 @@ export class CvEditorSession {
     this.initialized = true;
     if (!this.disposed) await this.refresh();
   }
-  async refresh() {
+  refresh(): Promise<void> {
+    if (this.refreshTask) return this.refreshTask;
+    if (this.exporting) return Promise.resolve();
+    const task = this.readLatest();
+    this.refreshTask = task;
+    void task.then(() => { if (this.refreshTask === task) this.refreshTask = null; }, () => { if (this.refreshTask === task) this.refreshTask = null; });
+    return task;
+  }
+  private async readLatest() {
     if (!this.initialized || this.disposed || !this.active || this.refreshing || this.saving) return;
     this.refreshing = true;
     const controller = new AbortController();
@@ -182,12 +192,21 @@ export class CvEditorSession {
     if (this.workspaceTimer) clearTimeout(this.workspaceTimer);
     this.workspaceTimer=setTimeout(()=>{this.workspaceTimer=null;void this.persist().catch(()=>undefined);},250);
   }
-  async saveForPdf(): Promise<EditorDocument | null> {
+  saveForPdf(): Promise<EditorDocument | null> {
+    if (this.exporting) return this.exporting;
+    // Capture the choice at the tap, before an in-flight read or receipt completes.
+    const selected = this.state.layoutDraft;
+    const task = this.preparePdf(selected);
+    this.exporting = task;
+    void task.then(() => { if (this.exporting === task) this.exporting = null; }, () => { if (this.exporting === task) this.exporting = null; });
+    return task;
+  }
+  private async preparePdf(selected: EditorLayout | null): Promise<EditorDocument | null> {
+    if (this.refreshTask) await this.refreshTask;
     // First reconcile any content/receipt. An unrelated autosave always uses layout,
     // while the canvas uses layoutDraft. Only this explicit action bridges them.
     const content = await this.flush();
     if (!content || this.disposed) return null;
-    const selected=this.state.layoutDraft;
     if (selected && !same(selected,content.layout ?? null)) this.update(this.state.resume!,this.state.confirmedSkills,selected);
     const saved=await this.flush();
     if (saved && same(this.state.layoutDraft,selected)) {
@@ -208,7 +227,8 @@ export class CvEditorSession {
   }
   async flush(): Promise<EditorDocument | null> {
     this.stopTimer();
-    if (this.state.error) return null;
+    if (this.refreshTask) await this.refreshTask;
+    if (this.state.error || this.disposed) return null;
     if (this.saving) { await this.saving; return this.dirty && this.state.saveState === "saving" ? this.flush() : this.state.saveState === "saved" ? this.state.document : null; }
     if (!this.dirty) return this.state.document;
     if (!this.state.document || !this.state.resume || this.disposed || this.refreshing || this.state.saveState === "conflict") return null;

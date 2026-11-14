@@ -24,9 +24,9 @@ function harness(config={}){
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
-test('all three templates, paper sizes, text sizes and margins update locally without scheduling a save or score',async(t)=>{
+test('all ten templates, paper sizes, text sizes and margins update locally without scheduling a save or score',async(t)=>{
  const h=harness();t.after(()=>h.session.dispose());await h.session.restore();
- for(const template of ['swiss-single','clean','modern'])for(const pageSize of ['A4','LETTER'])for(const base of [1,3,5])for(const margin of [5,12,25]){
+ for(const template of ['swiss-single','swiss-two-column','clean','modern','modern-two-column','latex','vivid','vivid-single','modern-deedy','deedy'])for(const pageSize of ['A4','LETTER'])for(const base of [1,3,5])for(const margin of [5,12,25]){
   const next={...applyTemplatePreset(h.session.snapshot.layoutDraft,template),pageSize,fontSize:{...h.session.snapshot.layoutDraft.fontSize,base},margins:{top:margin,bottom:margin,left:margin,right:margin,retained:7}};
   h.session.updateLayoutDraft(next);
   const canvas=liveDocumentPayload(h.session.snapshot.resume,h.session.snapshot.layoutDraft,options);
@@ -93,7 +93,7 @@ test('live markup retains ordered custom sections and bullet styles, safely rend
  const markup=liveDocumentPayload(data,layout(),options).markup;
  assert.match(markup,/&lt;script&gt;plain summary/);assert.match(markup,/<strong>Kept<\/strong>/);assert.doesNotMatch(markup,/<script|onerror|javascript:/);assert.match(markup,/class="bullet editable plain"/);assert.match(markup,/Volunteering/);assert.ok(markup.indexOf('Volunteering')<markup.indexOf('Technical Skills'));
  assert.match(markup,/data-key="workExperience" data-path="\[\]"/);assert.match(safeResumeHtml('<u>Underlined</u>'),/<u>Underlined/);
- const clean=applyTemplatePreset(layout(),'clean');assert.equal(clean.fontSize.headerFont,'sans-serif');assert.equal(clean.fontSize.bodyFont,'sans-serif');assert.equal(supportsLiveTemplate('latex'),false);
+ const clean=applyTemplatePreset(layout(),'clean');assert.equal(clean.fontSize.headerFont,'sans-serif');assert.equal(clean.fontSize.bodyFont,'sans-serif');assert.equal(supportsLiveTemplate('latex'),true);
  assert.ok(!serializeLivePayload({...liveDocumentPayload(data,layout(),options),markup:'</script><script>bad</script>'}).includes('</script>'));
 });
 
@@ -148,4 +148,94 @@ test('short entries stay whole, split entries retain leading/trailing bullet pai
  assert.equal(pages.filter(page=>page.querySelectorAll('[data-field-path]').some(node=>node.getAttribute('data-field-path')==='[0]')).length,1);
  const continued=dom.ids.controls.children.filter(button=>button.getAttribute('data-path')==='[2]');assert.ok(continued.length>=1);
  for(const page of pages){const text=page.textContent;for(const role of [1,2]){if(text.includes('Role '+role+' bullet 0'))assert.ok(text.includes('Role '+role+' bullet 1'));if(text.includes('Role '+role+' bullet 2'))assert.ok(text.includes('Role '+role+' bullet 3'));}}
+});
+
+test('PDF waits for a delayed refresh, preserves pending text and captures Two Column once on rapid taps',async(t)=>{
+ const h=harness();t.after(()=>h.session.dispose());await h.session.restore();
+ let release;h.deps.load=async()=>{await new Promise(resolve=>release=resolve);return clone(h.remote);};
+ const refresh=h.session.refresh();while(!release)await tick();
+ const chosen={...layout(),template:'swiss-two-column'};h.session.updateLayoutDraft(chosen);
+ h.session.update({...h.session.snapshot.resume,summary:'Text typed during refresh'});
+ const first=h.session.saveForPdf(),second=h.session.saveForPdf();assert.equal(first,second);
+ h.session.updateLayoutDraft({...chosen,template:'vivid'});await tick();assert.equal(h.saves.length,0);
+ release();await refresh;const saved=await first;
+ assert.equal(saved.layout.template,'swiss-two-column');assert.equal(saved.resume.summary,'Text typed during refresh');assert.equal(saved.revision,6);
+ assert.deepEqual(h.saves.map(save=>save.expected_revision),[4,5]);assert.equal(h.session.snapshot.layoutDraft.template,'vivid');assert.equal(h.session.snapshot.layoutDraftDirty,true);assert.equal(h.analyses.length,0);
+});
+
+test('a genuine newer revision discovered by delayed refresh blocks export and preserves local content and Two Column',async(t)=>{
+ const h=harness();t.after(()=>h.session.dispose());await h.session.restore();let release;
+ h.deps.load=async()=>{await new Promise(resolve=>release=resolve);return clone(h.remote);};
+ const refresh=h.session.refresh();while(!release)await tick();h.session.updateLayoutDraft({...layout(),template:'swiss-two-column'});h.session.update({...h.session.snapshot.resume,summary:'Keep this local text'});
+ const pdf=h.session.saveForPdf();h.remote={...h.remote,revision:5,resume:{...h.remote.resume,summary:'Another device'}};release();await refresh;
+ assert.equal(await pdf,null);assert.equal(h.saves.length,0);assert.equal(h.session.snapshot.saveState,'conflict');assert.equal(h.session.snapshot.resume.summary,'Keep this local text');assert.equal(h.session.snapshot.layoutDraft.template,'swiss-two-column');
+ h.deps.load=async()=>clone(h.remote);await h.session.resolveConflict('local');const saved=await h.session.saveForPdf();assert.equal(saved.revision,7);assert.equal(saved.resume.summary,'Keep this local text');assert.equal(saved.layout.template,'swiss-two-column');
+});
+
+test('PATCH 409 after refresh cannot export or overwrite a newer revision; explicit conflict resolution remains required',async(t)=>{
+ let remote=document(),first=true;
+ const h=harness({save:async body=>{
+  if(first){first=false;remote={...remote,revision:5,resume:{...remote.resume,summary:'Remote writer'}};throw Object.assign(Error('Revision conflict'),{status:409});}
+  assert.equal(body.expected_revision,remote.revision);remote={...remote,revision:remote.revision+1,resume:clone(body.resume),layout:clone(body.layout)};return clone(remote);
+ }});t.after(()=>h.session.dispose());await h.session.restore();let release;
+ h.deps.load=async()=>{await new Promise(resolve=>release=resolve);return clone(remote);};const refresh=h.session.refresh();while(!release)await tick();
+ h.session.updateLayoutDraft({...layout(),template:'swiss-two-column'});const exporting=h.session.saveForPdf();release();await refresh;
+ assert.equal(await exporting,null);assert.equal(h.session.snapshot.saveState,'conflict');assert.equal(h.session.snapshot.layoutDraft.template,'swiss-two-column');assert.equal(JSON.parse(h.stored).pending,null);assert.equal(await h.session.saveForPdf(),null);assert.equal(h.saves.length,1);
+ h.deps.load=async()=>clone(remote);await h.session.resolveConflict('local');const saved=await h.session.saveForPdf();assert.equal(saved.revision,6);assert.equal(saved.layout.template,'swiss-two-column');assert.equal(h.saves.length,2);
+});
+
+test('each of the ten templates has a local layout and revision-aware explicit export smoke check',async(t)=>{
+ const ids=['swiss-single','swiss-two-column','modern','modern-two-column','latex','clean','vivid','vivid-single','modern-deedy','deedy'];
+ for(const template of ids)await t.test(template,async()=>{
+  const h=harness();try{await h.session.restore();const draft=applyTemplatePreset({...layout(),pageSize:'LETTER'},template);h.session.updateLayoutDraft(draft);
+  const canvas=liveDocumentPayload(h.session.snapshot.resume,draft,options);assert.equal(supportsLiveTemplate(template),true);assert.match(canvas.markup,new RegExp(`class="${template}"`));assert.equal(h.saves.length,0);
+  const saved=await h.session.saveForPdf();assert.deepEqual(saved.layout,draft);assert.equal(saved.revision,5);assert.equal(h.saves.length,1);assert.equal(h.saves[0].expected_revision,4);assert.equal(h.analyses.length,0);
+  }finally{h.session.dispose();}
+ });
+});
+
+test('actual column markup routes shared sections, sidebar fields and rich bullets without losing content',()=>{
+ const data=resume();data.education=[{id:9,institution:'University',degree:'BSc',years:'2020'}];data.additional.awards=['Distinction'];
+ for(const template of ['swiss-two-column','modern-two-column','vivid','deedy']){
+  const markup=liveDocumentPayload(data,{...layout(),template},options).markup;
+  assert.match(markup,/class="resume-grid"/);const main=markup.match(/class="resume-column main-column">([\s\S]*?)(?=<div class="resume-column|<\/article>)/)?.[1];const sidebar=markup.match(/class="resume-column sidebar-column">([\s\S]*?)(?=<div class="resume-column|<\/article>)/)?.[1];
+  assert.match(main,/data-section="workExperience"/);assert.match(main,/data-field-path="\[0\]"/);assert.match(main,/<strong>original<\/strong>/);assert.doesNotMatch(sidebar,/data-section="workExperience"/);assert.match(sidebar,/data-section="education"/);assert.match(sidebar,/data-subsection="technicalSkills"/);assert.match(sidebar,/data-path="\[&quot;technicalSkills&quot;\]"/);assert.match(template==='deedy'?main:sidebar,/Distinction/);
+  assert.equal((markup.match(/A complete summary\./g)||[]).length,1);assert.equal((markup.match(/TypeScript/g)||[]).length,1);
+ }
+ const classic=liveDocumentPayload(data,{...layout(),template:'latex'},options).markup;assert.ok(classic.indexOf('Example')<classic.indexOf('Engineer'));
+ const vivid=liveDocumentPayload(data,{...layout(),template:'vivid-single'},options).markup;assert.match(vivid,/name-first/);assert.doesNotMatch(vivid,/resume-grid/);
+});
+
+
+test('column pagination flows each lane from page one and preserves all text, marks and original sidebar bindings',()=>{
+ for(const template of ['swiss-two-column','modern-two-column','vivid','deedy'])for(const tallSide of [false,true]){
+  let dom;
+  const build=()=>{
+   const el=(tag,cls,text)=>{const node=new dom.Element(tag,{class:cls});if(text)node.appendChild(new dom.TextNode(text));return node;};
+   const article=el('article',template),grid=el('div','resume-grid'),main=el('div','resume-column main-column'),side=el('div','resume-column sidebar-column');
+   const header=el('header','identity','One shared identity');article.appendChild(header);article.appendChild(grid);(template==='deedy'?[side,main]:[main,side]).forEach(lane=>grid.appendChild(lane));
+   for(const [lane,key] of [[main,'workExperience'],[side,'additional']]){
+    const section=el('section','resume-section');section.setAttribute('data-section',key);if(key==='additional')section.setAttribute('data-subsection','technicalSkills');
+    const head=el('div','section-heading');head.appendChild(el('h2','',key));const button=el('button','pencil');button.setAttribute('data-key',key);button.setAttribute('data-path',key==='additional'?'["technicalSkills"]':'[]');button.setAttribute('data-label',key);head.appendChild(button);section.appendChild(head);
+    const paragraph=el('div','paragraph');paragraph.appendChild(el('strong','','Rich '+key+' '+('evidence '.repeat(lane===side&&tallSide?150:lane===main&&!tallSide?200:8))));section.appendChild(paragraph);lane.appendChild(section);
+   }return article;
+  };
+  dom=canvasDom(build);const original=build();vm.runInNewContext(liveDocumentHtml().match(/<script>([\s\S]*)<\/script>/)[1],dom.context);dom.context.window.updateResume(canvasPayload({markup:template,paperWidth:300,paperHeight:400}));
+  const papers=dom.ids.pages.children;assert.ok(papers.length>1);assert.ok(papers[0].querySelector('.main-column'));assert.ok(papers[0].querySelector('.sidebar-column'));
+  for(const lane of ['main-column','sidebar-column']){
+   const text=papers.flatMap(paper=>paper.querySelectorAll('.'+lane)).map(column=>column.textContent).join('');assert.equal(text,original.querySelector('.'+lane).textContent);
+  }
+  assert.equal(papers.map(p=>p.textContent).join('').split('One shared identity').length,2);
+  for(const paper of papers)assert.ok(paper.firstElementChild.offsetHeight<=400.5);
+  assert.ok(dom.ids.controls.children.some(button=>button.getAttribute('data-path')==='["technicalSkills"]'));
+  assert.ok(papers.flatMap(p=>p.querySelectorAll('strong')).every(mark=>mark.textContent.startsWith('Rich')||mark.textContent.includes('evidence')));
+ }
+});
+
+
+test('layout-only Two Column export during delayed refresh sends one PATCH and returns its acknowledged revision',async(t)=>{
+ const h=harness();t.after(()=>h.session.dispose());await h.session.restore();let release;
+ h.deps.load=async()=>{await new Promise(resolve=>release=resolve);return clone(h.remote);};const refreshing=h.session.refresh();while(!release)await tick();
+ h.session.updateLayoutDraft({...layout(),template:'swiss-two-column'});const pdf=h.session.saveForPdf();await tick();assert.equal(h.saves.length,0);release();await refreshing;const saved=await pdf;
+ assert.equal(h.saves.length,1);assert.equal(h.saves[0].expected_revision,4);assert.equal(h.saves[0].layout.template,'swiss-two-column');assert.equal(saved.revision,5);assert.deepEqual(saved.resume,resume());assert.equal(saved.layout.template,'swiss-two-column');
 });

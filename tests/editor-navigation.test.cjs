@@ -62,7 +62,7 @@ function harness() {
   const router={dismissTo:href=>h.calls.push(["dismissTo",href]),push:href=>h.calls.push(["push",href]),replace:href=>h.calls.push(["replace",href]),back:()=>h.calls.push(["back"]),navigate:href=>h.calls.push(["navigate",href]),canGoBack:()=>h.canGoBack};
   const mocks={
     react:hooks,
-    "react-native":{View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",KeyboardAvoidingView:"KeyboardAvoidingView",Platform:{OS:"web"},Keyboard:{dismiss(){},metrics:()=>undefined},useWindowDimensions:()=>({width:390,height:844}),AppState:{addEventListener:()=>({remove(){}})}},
+    "react-native":{StyleSheet:{create:styles=>styles},View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",KeyboardAvoidingView:"KeyboardAvoidingView",Platform:{OS:"web"},Keyboard:{dismiss(){},metrics:()=>undefined},useWindowDimensions:()=>({width:390,height:844}),AppState:{addEventListener:()=>({remove(){}})}},
     "expo-router":{router,useRouter:()=>router,useLocalSearchParams:()=>h.params,Stack:{Screen:"StackScreen"},useFocusEffect:fn=>hooks.useEffect(()=>h.focused?fn():undefined,[fn,h.focused])},
     "react-native-safe-area-context":{SafeAreaView:"SafeAreaView",useSafeAreaInsets:()=>({top:0,bottom:0,left:0,right:0})},
     "@/lib/editor/useLivePreview":{useLivePreview:()=>({pdf:null,updating:false,error:null,retry:()=>{},retain:()=>()=>{}})},
@@ -336,7 +336,7 @@ test('native PDF loading-to-document transitions preserve context; paper size is
 });
 
 test('iOS preview downloads the same saved artifact and pins a new acknowledged layout revision after editing',async(t)=>{
- for(const template of ['swiss-single','modern'])await t.test(template,async(t)=>{
+ for(const template of ['swiss-single','swiss-two-column','modern','modern-two-column','latex','clean','vivid','vivid-single','modern-deedy','deedy'])await t.test(template,async(t)=>{
   const h=harness();t.after(()=>h.dispose());h.mocks['react-native'].Platform.OS='ios';h.params={id:TAILORED,revision:'6'};
   let remote={...makeDocument(),layout:{...baseLayout(),template}},release,signal;const loaded=[],shared=[],disposed=[];
   h.open('app/cv-editor/[id]/preview.tsx',{'@/lib/editor/api':{getEditorDocument:async()=>copy(remote)},'@/lib/editor/pdf':{loadEditorPdf:async(owner,id,revision,abort)=>{signal=abort;if(revision===7)await new Promise(resolve=>release=resolve);const artifact={uri:`file:///saved-${revision}.pdf`,revision,pageCount:2,dispose:async()=>disposed.push(revision)};loaded.push({artifact,layout:copy(remote.layout),summary:remote.resume.summary});return artifact;},shareEditorPdf:async pdf=>shared.push(pdf)}});
@@ -358,7 +358,7 @@ test('PDF waits for acknowledgement and retains the editor draft and retry after
  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
  h.button('Open PDF preview').props.onPress();await h.pump();assert.deepEqual(h.calls,[]);
  finish(null);await h.pump();assert.deepEqual(h.calls,[]);assert.match(h.find(n=>n.type==='Notice').props.message,/text and layout are kept/);
- h.button('Retry PDF').props.onPress();await h.pump();finish({...document,revision:7});await h.pump();
+ h.button('Retry saving').props.onPress();await h.pump();finish({...document,revision:7});await h.pump();
  assert.deepEqual(h.calls,[['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'7',returnToEditor:'1'}}]]);
 });
 
@@ -729,10 +729,10 @@ test('the divider follows continuous drag, persists only on release, retains chi
 });
 
 test('an unsupported saved template is preserved and offers explicit PDF without starting background generation',async(t)=>{
- const h=harness();t.after(()=>h.dispose());const document=makeDocument();document.layout={...document.layout,template:'latex'};document.layout_options.templates.push('latex');let exports=0;
+ const h=harness();t.after(()=>h.dispose());const document=makeDocument();document.layout={...document.layout,template:'future-template'};document.layout_options.templates.push('future-template');let exports=0;
  const editor={document,resume:document.resume,layout:document.layout,layoutDraft:document.layout,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,saveForPdf:async()=>{exports++;return document;}};
  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
- assert.equal(h.find(n=>n.type==='CvPreviewSurface'),undefined);assert.equal(exports,0);assert.match(h.getText(),/Classic is available in PDF preview/);assert.equal(editor.layoutDraft.template,'latex');
+ assert.equal(h.find(n=>n.type==='CvPreviewSurface'),undefined);assert.equal(exports,0);assert.match(h.getText(),/Future Template is available in PDF preview/);assert.equal(editor.layoutDraft.template,'future-template');
  h.button('View template in PDF').props.onPress();await h.pump();assert.equal(exports,1);assert.equal(h.calls.at(-1)[1].params.revision,'6');
 });
 
@@ -768,4 +768,28 @@ test('page-two pencil targets the existing role and keeps its resume ID through 
 test('PDF Done without history recovers the same editor and its originating screen',async(t)=>{
  const h=harness();t.after(()=>h.dispose());h.canGoBack=false;h.params={id:TAILORED,revision:'6',returnToEditor:'1',editorReturnTo:'tailor'};
  h.open('app/cv-editor/[id]/preview.tsx',{'@/lib/editor/api':{getEditorDocument:async()=>makeDocument()},'@/lib/editor/pdf':{loadEditorPdf:async()=>({uri:'file:///same.pdf',revision:6,dispose:async()=>{}}),shareEditorPdf:async()=>{}}});await h.pump();h.button('Done, return to editor').props.onPress();assert.deepEqual(h.calls,[['replace',{pathname:'/cv-editor/[id]',params:{id:TAILORED,returnTo:'tailor'}}]]);
+});
+
+
+test('Templates renders every server option in one two-column grid with readable names and local-only selection',()=>{
+ const h=harness(),document=makeDocument(),ids=['swiss-single','swiss-two-column','modern','modern-two-column','latex','clean','vivid','vivid-single','modern-deedy','deedy'];let selected=null;
+ h.open('components/editor/DesignLayout.tsx',{},'DesignLayout',{mode:'templates',layout:{...document.layout,template:'modern-two-column'},options:{templates:ids,page_sizes:['A4','LETTER']},onChange:layout=>selected=layout,onReload:()=>{}});
+ const cards=nodes(h.render()).filter(node=>node.props?.accessibilityRole==='radio');assert.equal(cards.length,10);assert.equal(cards.filter(card=>card.props.accessibilityState.checked).length,1);
+ for(let i=0;i<cards.length;i++){assert.match(cards[i].props.className,/w-\[48%\]/);assert.ok(nodes(cards[i]).filter(node=>node.type==='Text').every(node=>!node.props.numberOfLines));cards[i].props.onPress();assert.equal(selected.template,ids[i]);}
+ assert.doesNotMatch(h.getText(),/More templates|PDF preview/);assert.equal(h.calls.length,0);h.dispose();
+});
+
+test('two PDF taps before a rerender prepare and navigate only once',async()=>{
+ const h=harness(),document=makeDocument();let release,calls=0;
+ const editor={document,resume:document.resume,layout:document.layout,layoutDraft:{...document.layout,template:'swiss-two-column'},confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,saveForPdf:async()=>{calls++;await new Promise(resolve=>release=resolve);return {...document,revision:7};}};
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});const tap=h.button('Open PDF preview').props.onPress;tap();tap();await h.pump();assert.equal(calls,1);assert.equal(h.calls.length,0);release();await h.pump();assert.equal(h.calls.length,1);assert.equal(h.calls[0][1].params.revision,'7');h.dispose();
+});
+
+
+test('PDF retrieval retry keeps the frozen revision; viewer retry and download reuse the retrieved artifact',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());h.params={id:TAILORED,revision:'6',returnToEditor:'1'};let fail=true;const loads=[],shares=[];const artifact={uri:'file:///frozen-v6.pdf',revision:6,dispose:async()=>{}};
+ h.open('app/cv-editor/[id]/preview.tsx',{'@/lib/editor/api':{getEditorDocument:async()=>({...makeDocument(),revision:7})},'@/lib/editor/pdf':{loadEditorPdf:async(owner,id,revision)=>{loads.push(revision);if(fail)throw Error('Service unavailable');return artifact;},shareEditorPdf:async pdf=>shares.push(pdf)}});
+ await h.pump();assert.match(h.getText(),/PDF retrieval failed/);assert.equal(h.button('Download PDF').props.disabled,true);fail=false;h.button('Retry PDF retrieval').props.onPress();await h.pump();assert.deepEqual(loads,[6,6]);
+ h.find(node=>node.type==='PdfViewer').props.onError();h.render();assert.match(h.getText(),/viewer could not display/);h.button('Retry viewer').props.onPress();h.render();assert.ok(h.find(node=>node.type==='PdfViewer'));assert.deepEqual(loads,[6,6]);
+ h.button('Download PDF').props.onPress();await h.pump();assert.equal(shares[0],artifact);assert.deepEqual(loads,[6,6]);
 });

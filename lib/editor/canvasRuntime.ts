@@ -17,7 +17,7 @@ export const liveCanvasScript = String.raw`(function(){
         Array.from(pages.querySelectorAll('.paper')).forEach(function(paper,index){
           var rect=paper.getBoundingClientRect(),items=[];
           Array.from(paper.querySelectorAll('[data-section]')).forEach(function(section){
-            var original=originals.find(function(item){return item.getAttribute('data-section')===section.getAttribute('data-section');}),button=original?original.querySelector('button[data-key]'):null;
+            var original=originals.find(function(item){return item.getAttribute('data-section')===section.getAttribute('data-section')&&item.getAttribute('data-subsection')===section.getAttribute('data-subsection');}),button=original?original.querySelector('button[data-key]'):null;
             if(!button)return;
             var copy=button.cloneNode(true),entry=section.querySelector('[data-field-path]');if(entry){copy.setAttribute('data-path',entry.getAttribute('data-field-path'));var title=entry.querySelector('.entry-heading strong');if(title){var label=button.getAttribute('data-label')+' — '+title.textContent;copy.setAttribute('data-label',label);copy.setAttribute('aria-label','Edit '+label);}}controls.appendChild(copy);items.push({node:copy,naturalY:(section.getBoundingClientRect().top-rect.top)/scale});
           });controlItems.push({page:index,items:items});
@@ -58,12 +58,20 @@ export const liveCanvasScript = String.raw`(function(){
     source.innerHTML=current.markup;
     var original=source.firstElementChild;if(!original)return;
     source.style.width=current.paperWidth+'px';pages.replaceChildren();
-    var article=null,clones=null;
+    var article=null,clones=null,pageIndex=-1,records=[],lane=null;
     function newPage(){
+      pageIndex++;
+      if(records[pageIndex]){article=records[pageIndex].article;clones=records[pageIndex].clones;return;}
       var page=document.createElement('div');page.className='paper';page.style.width=current.paperWidth+'px';page.style.height=current.paperHeight+'px';page.style.marginBottom=gap+'px';
-      article=original.cloneNode(false);article.removeAttribute('id');page.appendChild(article);pages.appendChild(page);clones=new Map();clones.set(original,article);
+      article=original.cloneNode(false);article.removeAttribute('id');page.appendChild(article);pages.appendChild(page);clones=new Map();clones.set(original,article);records.push({article:article,clones:clones});
     }
-    function hasContent(){return !!article.textContent.trim();}
+    function hasContent(){var container=lane?clones.get(lane):article;return !!(container&&container.textContent.trim());}
+    function remainingHeight(){
+      if(!lane)return current.paperHeight-article.offsetHeight;
+      var container=clones.get(lane),style=getComputedStyle(article),header=article.querySelector('.identity'),grid=article.querySelector('.resume-grid');
+      var overhead=(parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0)+(header?header.offsetHeight+(parseFloat(getComputedStyle(header).marginBottom)||0):0)+(grid?parseFloat(getComputedStyle(grid).marginTop)||0:0);
+      return current.paperHeight-overhead-(container?container.offsetHeight:0);
+    }
     function fits(){return article.offsetHeight<=current.paperHeight+.5;}
     function parentFor(path){var parent=article;path.forEach(function(node){var copy=clones.get(node);if(!copy||!copy.parentNode){copy=node.cloneNode(false);copy.removeAttribute('id');parent.appendChild(copy);clones.set(node,copy);}parent=copy;});return parent;}
     function remove(node){var parent=node.parentNode;node.remove();while(parent&&parent!==article&&!parent.childNodes.length){var next=parent.parentNode;parent.remove();parent=next;}}
@@ -107,7 +115,7 @@ export const liveCanvasScript = String.raw`(function(){
         var children=Array.from(node.childNodes),nextPath=path.concat([node]);
         children.forEach(function(child,index){
           if(child.nodeType===1&&child.matches('.section-heading,.entry-heading,.skill-label,.keep-next')&&hasContent()){
-            var probe=append(child,nextPath),next=children.slice(index+1).find(function(item){return item.nodeType===1;}),enough=article.offsetHeight+leadingHeight(next)<=current.paperHeight+.5;remove(probe);if(!enough)newPage();
+            var probe=append(child,nextPath),next=children.slice(index+1).find(function(item){return item.nodeType===1;}),enough=leadingHeight(next)<=remainingHeight()+.5;remove(probe);if(!enough)newPage();
           }
           place(child,nextPath);
         });return;
@@ -120,7 +128,15 @@ export const liveCanvasScript = String.raw`(function(){
       // No clipping, duplicated headings, artificial page limit, or dropped text.
       if(node.textContent.length)splitText(node,path);
     }
-    newPage();Array.from(original.children).forEach(function(node){place(node,[]);});
+    newPage();Array.from(original.children).forEach(function(node){
+      if(!node.classList.contains('resume-grid')){place(node,[]);return;}
+      var firstColumnPage=pageIndex;
+      Array.from(node.children).forEach(function(column){
+        pageIndex=firstColumnPage;article=records[pageIndex].article;clones=records[pageIndex].clones;lane=column;
+        Array.from(column.children).forEach(function(section){place(section,[node,column]);});
+      });
+      lane=null;pageIndex=records.length-1;article=records[pageIndex].article;clones=records[pageIndex].clones;
+    });
     var all=Array.from(pages.children);if(all.length>1&&!all[all.length-1].textContent.trim())all[all.length-1].remove();
     pageCount=Math.max(1,pages.children.length);
     Array.from(pages.children).forEach(function(page,index){page.setAttribute('aria-label','Resume page '+(index+1)+' of '+pageCount);});

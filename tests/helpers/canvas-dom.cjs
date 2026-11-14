@@ -23,6 +23,9 @@ function canvasDom(original,viewportWidth=390,viewportHeight=420){
    if(this.classList.contains('pencil'))return 0;
    if(this.classList.contains('paper'))return parseFloat(this.style.height)||0;
    let width=200,parent=this;while(parent){if(parent.style.width){width=parseFloat(parent.style.width)-40;break;}parent=parent.parentNode;}
+   let column=this;while(column&&!column.classList?.contains('resume-column'))column=column.parentNode;
+   if(column){let paper=column;while(paper&&paper.tagName!=='ARTICLE')paper=paper.parentNode;const side=column.classList.contains('sidebar-column'),deedy=paper?.classList.contains('deedy');width=width*(side?(deedy?.33:.35):(deedy?.67:.65))-20;}
+   if(this.classList.contains('resume-grid'))return Math.max(0,...this.children.map(child=>child.offsetHeight));
    const lines=()=>this.textContent.length?Math.ceil(this.textContent.length/Math.max(5,Math.floor(width/7)))*20:0;
    if(this.classList.contains('paragraph')||this.classList.contains('skill-list'))return lines();
    if(this.classList.contains('bullet')||this.classList.contains('entry-row'))return Math.max(0,...this.children.map(child=>child.offsetHeight));
@@ -30,7 +33,7 @@ function canvasDom(original,viewportWidth=390,viewportHeight=420){
    const height=this.childNodes.reduce((n,node)=>n+(node.nodeType===3?(node.textContent.length?20:0):node.offsetHeight),0);
    return height+(this.tagName==='ARTICLE'?40:0);
   }
-  getBoundingClientRect(){let top=0,node=this;while(node.parentNode){const siblings=node.parentNode.childNodes;for(const before of siblings.slice(0,siblings.indexOf(node)))top+=before.nodeType===1?before.offsetHeight+(parseFloat(before.style.marginBottom)||0):0;node=node.parentNode;}let zoom=1;const transform=ids.pages?.style.transform;if(transform)zoom=Number(transform.match(/scale\(([^)]+)\)/)[1]);return {left:0,top:top*zoom,width:200,height:this.offsetHeight*zoom};}
+  getBoundingClientRect(){let top=0,node=this;while(node.parentNode){const siblings=node.parentNode.childNodes;for(const before of node.parentNode.classList.contains('resume-grid')?[]:siblings.slice(0,siblings.indexOf(node)))top+=before.nodeType===1?before.offsetHeight+(parseFloat(before.style.marginBottom)||0):0;node=node.parentNode;}let zoom=1;const transform=ids.pages?.style.transform;if(transform)zoom=Number(transform.match(/scale\(([^)]+)\)/)[1]);return {left:0,top:top*zoom,width:200,height:this.offsetHeight*zoom};}
   get scrollLeft(){return this._left;}set scrollLeft(value){this._left=Math.max(0,value);}get scrollTop(){return this._top;}set scrollTop(value){this._top=Math.max(0,value);}
  }
  const ids=Object.fromEntries(['scroller','frame','pages','source','controls','fit','page-count'].map(id=>[id,new Element('div',{id})]));

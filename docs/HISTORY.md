@@ -55,3 +55,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Edit Resume keeps a local structured document above compact tools; formatting trials stay separate from content autosave and commit only for explicit PDF export.
 
 - Saved CVs open directly in Edit Resume; local paginated pages, pinch/pan/Fit and a continuously resizable tools divider retain one shared document and revision-aware PDF export.
+
+- Templates presents all engine options in one grid with local single/sidebar layouts; explicit PDF preparation waits for refresh and serializes the layout captured at the tap.
