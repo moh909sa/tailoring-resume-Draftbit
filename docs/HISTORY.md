@@ -61,3 +61,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Edit Resume uses the actual revision-pinned Railway PDF, with debounced saves after formatting or field completion and one leased artifact for inline view, preview and download.
 
 - Inline PDF updates use leased layers and viewer-load readiness before handoff; debug-only duration logs distinguish readiness from unobservable native first-page paint.
+
+- Job Match opens from the editor header beside PDF in a dedicated screen, sharing the saved CV session and retaining the editor panel and edits on Back.

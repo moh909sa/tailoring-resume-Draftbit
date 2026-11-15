@@ -167,6 +167,7 @@ function RootContent() {
           <Stack.Screen name="(tabs)" options={{ title: "Home" }} />
           <Stack.Screen name="my-cv" options={{ title: "My CVs" }} />
           <Stack.Screen name="cv-editor/[id]" options={{ title: "Edit Resume" }} />
+          <Stack.Screen name="cv-editor/[id]/job-match" options={{ title: "Job Match" }} />
           <Stack.Screen name="cv-editor/[id]/preview" options={{ title: "Preview PDF" }} />
           <Stack.Screen
             name="tailoring/processing"

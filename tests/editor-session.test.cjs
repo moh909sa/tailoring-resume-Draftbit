@@ -114,3 +114,9 @@ test('missing or unauthorized cached CVs preserve local edits without being trea
 test('PDF response must expose a verifiable saved revision before download',()=>{
   for(const revision of [null, '', '1.0', 'abc']) assert.throws(()=>pdf.validatePdfResponse(200,'application/pdf',revision,1),/version could not be verified/);
 });
+
+test('legacy Job Match workspace restores Content without losing draft, section or match selection',async()=>{
+  const original=doc();const raw=JSON.stringify({version:1,document:original,resume:{summary:'Pending edit'},confirmedSkills:[],pending:null,dirty:true,workspace:{tool:'match',trayOpen:true,sectionKey:'summary',matchSection:'highlights',panelHeight:250}});
+  const h=harness({raw});await h.session.restore();
+  assert.equal(h.session.snapshot.workspace.tool,'content');assert.equal(h.session.snapshot.workspace.sectionKey,'summary');assert.equal(h.session.snapshot.workspace.matchSection,'highlights');assert.equal(h.session.snapshot.workspace.panelHeight,250);assert.equal(h.session.snapshot.resume.summary,'Pending edit');assert.equal(h.mutations.length,0);h.session.dispose();
+});

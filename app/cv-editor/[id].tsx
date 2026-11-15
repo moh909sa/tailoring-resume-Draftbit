@@ -21,9 +21,8 @@ import { useEditorPdf } from "@/lib/editor/useEditorPdf";
 import { pdfEditSignature } from "@/lib/editor/editorPdfPreview";
 import { EditorFieldActivity } from "@/components/editor/EditorFieldActivity";
 import { DesignLayout } from "@/components/editor/DesignLayout";
-import { JobMatch } from "@/components/editor/JobMatch";
 import { addCustomSection, deleteCustomSection, duplicateCustomSection, moveSection, renameSection, replaceSection, resumeSections, withSectionMetadata, type EditorSection } from "@/components/editor/sections";
-import { isJsonObject, type JsonValue } from "@/lib/tailoring/types";
+import { type JsonValue } from "@/lib/tailoring/types";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/theming/ThemeProvider";
 
@@ -86,16 +85,6 @@ export default function CvEditorScreen() {
   const selectTool=(tool:EditorWorkspace["tool"])=>{
     Keyboard.dismiss();setFieldEditing(false);setWorkspace({tool,trayOpen:workspace.tool !== tool || !workspace.trayOpen,panelHeight:workspace.panelHeight || 190});
   };
-  const addSkill = (skill:string) => {
-    if(!editor.resume || !document) return;
-    const skillsSection = sections.find(s=>s.key === "additional" || /technicalSkills|professionalSkills|skills$/i.test(s.key) && Array.isArray(s.value));
-    const skills = skillsSection?.key === "additional" && isJsonObject(skillsSection.value) ? skillsSection.value.technicalSkills : skillsSection?.value;
-    const current = Array.isArray(skills) ? skills : [];
-    const key = skillsSection?.key === "additional" ? "additional.technicalSkills" : skillsSection?.key ?? "additional.technicalSkills";
-    let next = current.some(v=>typeof v === "string" && v.toLocaleLowerCase() === skill.toLocaleLowerCase()) ? editor.resume : replaceSection(editor.resume,key,[...current,skill]);
-    if(Array.isArray(next.sectionMeta)) next = {...next,sectionMeta:next.sectionMeta.map(meta=>isJsonObject(meta) && (meta.key === key || meta.key === key.split(".").pop() || key.startsWith("additional.") && meta.key === "additional") ? {...meta,isVisible:true} : meta)};
-    editor.updateResume(withSectionMetadata(next),Array.from(new Set([...editor.confirmedSkills,skill])));
-  };
   const duplicateSection = (key:string) => {
     if (!editor.resume) return;
     const copy = duplicateCustomSection(editor.resume,key);
@@ -125,6 +114,11 @@ export default function CvEditorScreen() {
   });
   const rename = (key:string,name:string) => {if(editor.resume) editor.updateResume(renameSection(editor.resume,key,name));};
   const openCreatedSection = () => {if(pendingSection.current) {setWorkspace({tool:"content",trayOpen:true,panelHeight:workspace.panelHeight || 190,sectionKey:pendingSection.current,fieldPath:null,fieldLabel:null});pendingSection.current=null;}};
+  const openJobMatch=()=>{
+    if(!document || !editor.resume || editor.error || openingPreview)return;
+    Keyboard.dismiss();
+    router.push({pathname:"/cv-editor/[id]/job-match",params:{id:document.tailoring_id,...(returnTo === "library" || returnTo === "tailor" ? {editorReturnTo:returnTo} : {})}});
+  };
   const preview=()=>{
     const pdf=displayed.pdf,snapshot=editor.getSnapshot?.();
     if(previewLock.current || !displayed.ready || !pdf)return;
@@ -136,8 +130,8 @@ export default function CvEditorScreen() {
   return <EditorFieldActivity onChange={setFieldEditing} resetKey={JSON.stringify([session?.user.id,id,workspace.tool,workspace.sectionKey,workspace.trayOpen])}><AppScreen>
     <View className="h-14 native:h-[56px] shrink-0 flex-row items-center gap-1 border-b border-border bg-background px-2">
       <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 native:h-[44px] native:w-[44px]" accessibilityLabel={returnTo === "preview" ? "Back to saved preview" : returnTo === "tailor" ? "Back to Tailor" : "Back to saved CVs"} disabled={openingPreview} onPress={leave}><LucideIcon name="ChevronLeft" size={22} className="text-foreground"/></Button>
-      <View className="min-w-0 flex-1"><Text accessibilityRole="header" className="text-editor-title text-foreground">Edit Resume</Text><Text accessibilityLiveRegion="polite" numberOfLines={1} className="text-caption text-muted-foreground">{!document || editor.error ? (editor.loading?"Opening saved CV…":session?"Saved CV":"Sign in to edit") : openingPreview ? "Opening PDF…" : pdfError ? "PDF needs updating" : pdfInput?.editing ? "Editing…" : !displayed.ready ? "Updating PDF…" : `Saved · PDF v${displayed.pdf?.revision}`}{document && !editor.error && editor.layoutDraftDirty ? " · Layout on device" : ""}</Text></View>
-      {document && editor.resume && !editor.error ? <Button variant="ghost" accessibilityLabel="Open PDF preview" disabled={openingPreview || !displayed.ready} className="min-h-11 native:min-h-[44px] min-w-16 flex-row gap-1.5 px-3" onPress={()=>void preview()}>{openingPreview?<ActivityIndicator size="small"/>:<LucideIcon name="FileText" size={17} className="text-primary"/>}<Text className="text-body font-semibold text-primary">PDF</Text></Button>:null}
+      <View className="min-w-0 flex-1"><Text accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} className="text-editor-title text-foreground">Edit Resume</Text><Text accessibilityLiveRegion="polite" numberOfLines={1} className="text-caption text-muted-foreground">{!document || editor.error ? (editor.loading?"Opening saved CV…":session?"Saved CV":"Sign in to edit") : openingPreview ? "Opening PDF…" : pdfError ? "PDF needs updating" : pdfInput?.editing ? "Editing…" : !displayed.ready ? "Updating PDF…" : `Saved · PDF v${displayed.pdf?.revision}`}{document && !editor.error && editor.layoutDraftDirty ? " · Layout on device" : ""}</Text></View>
+      {document && editor.resume && !editor.error ? <View className="shrink-0 flex-row items-center"><Button variant="ghost" size="sm" accessibilityLabel="Job Match" disabled={openingPreview} className="h-11 min-h-11 native:min-h-[44px] shrink-0 px-2" onPress={openJobMatch}><Text className="text-body font-semibold text-primary">Job Match</Text></Button><Button variant="ghost" size="sm" accessibilityLabel="Open PDF preview" disabled={openingPreview || !displayed.ready} className="min-h-11 native:min-h-[44px] min-w-16 shrink-0 flex-row gap-1.5 px-2" onPress={()=>void preview()}>{openingPreview?<ActivityIndicator size="small"/>:<LucideIcon name="FileText" size={17} className="text-primary"/>}<Text className="text-body font-semibold text-primary">PDF</Text></Button></View>:null}
     </View>
     {editor.loading ? <View className="flex-1 items-center justify-center gap-4 bg-background"><ActivityIndicator/><Text className="text-body text-muted-foreground">Opening your saved CV…</Text></View>
     : !document || !editor.resume || editor.error ? <View className="flex-1 justify-center gap-4 bg-background px-6"><Notice tone="error" message={editor.error ?? "This CV could not be opened."}/>{!editor.routeError?<Button onPress={()=>session && editor.accessStatus !== 401 ? void editor.reload() : setShowSignIn(true)}><Text>{session && editor.accessStatus !== 401?"Try again":"Sign in"}</Text></Button>:null}<Button variant="outline" onPress={leave}><Text>Return to Tailored CVs</Text></Button></View>
@@ -164,17 +158,13 @@ export default function CvEditorScreen() {
         }>
           <View testID="editor-content-controls" className={cn("flex-1 bg-background",workspace.tool === "content"?"flex":"hidden")}>
             <View className={cn("flex-1 bg-background",section?"hidden":"flex")}>
-              <View className="min-h-11 native:min-h-[44px] flex-row items-center justify-between gap-2 bg-background px-4"><Text className="text-caption text-muted-foreground">Choose a section to edit</Text><Button variant="ghost" className="min-h-11 native:min-h-[44px] flex-row gap-1 px-1" onPress={()=>setWorkspace({tool:"match",trayOpen:true})}><LucideIcon name="ChartNoAxesCombined" size={15} className="text-primary"/><Text className="text-caption font-medium text-primary">Job Match</Text></Button></View>
+              <View className="min-h-11 native:min-h-[44px] justify-center bg-background px-4"><Text className="text-caption text-muted-foreground">Choose a section to edit</Text></View>
               <ScrollView ref={contentScroll} className="flex-1 bg-background" contentContainerClassName="gap-3 px-4 pb-6" keyboardShouldPersistTaps="handled" scrollEventThrottle={16} onLayout={()=>contentScroll.current?.scrollTo({y:listOffset.current,animated:false})} onScroll={event=>{if(!section)listOffset.current=Math.max(0,event.nativeEvent.contentOffset.y);}}><ResumeSectionList sections={sections} onOpen={openSection} onActions={setMenuKey} onAdd={()=>setAddingSection(true)}/></ScrollView>
             </View>
             {section?<SectionEditor inline section={section} target={workspace.fieldPath?{path:workspace.fieldPath,label:workspace.fieldLabel ?? section.label}:undefined} saveLabel={statusLabels[editor.saveState]} onChange={(value:JsonValue)=>{if(editor.resume)editor.updateResume(withSectionMetadata(replaceSection(editor.resume,section.key,value)));}} onClose={closeSection} onRename={name=>rename(section.key,name)} actions={actionsFor(section)}/>:null}
           </View>
           <View testID="editor-templates-controls" className={cn("flex-1 bg-background",workspace.tool === "templates"?"flex":"hidden")}><ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 pb-4 pt-3" keyboardShouldPersistTaps="handled"><DesignLayout mode="templates" layout={layout} options={document.layout_options} onChange={next=>{displayed.formatTap?.();editor.updateLayoutDraft(next);}} onReload={()=>void editor.reload()}/></ScrollView></View>
           <View testID="editor-format-controls" className={cn("flex-1 bg-background",workspace.tool === "format"?"flex":"hidden")}><ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 pb-4 pt-1" keyboardShouldPersistTaps="handled"><DesignLayout mode="format" layout={layout} options={document.layout_options} onChange={next=>{displayed.formatTap?.();editor.updateLayoutDraft(next);}} onReload={()=>void editor.reload()}/></ScrollView></View>
-          <View testID="editor-match-controls" className={cn("flex-1 bg-background",workspace.tool === "match"?"flex":"hidden")}>
-            <View className="flex-row border-b border-border bg-background px-3">{([['overview','Overview'],['highlights','Keyword Highlights']] as const).map(([key,label])=><Pressable key={key} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{selected:workspace.matchSection === key}} onPress={()=>setWorkspace({matchSection:key})} className={cn("min-h-11 native:min-h-[44px] flex-1 items-center justify-center border-b-2 bg-background px-1",workspace.matchSection === key?"border-primary":"border-transparent")}><Text className={cn("text-caption",workspace.matchSection === key?"text-primary":"text-muted-foreground")}>{label}</Text></Pressable>)}</View>
-            <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 pb-6 pt-3" keyboardShouldPersistTaps="handled"><JobMatch section={workspace.matchSection} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={()=>void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection}/></ScrollView>
-          </View>
         </EditorControlsPanel>
         <View className="bg-background" style={{height:Math.max(insets.bottom,6)}}/>
       </View>

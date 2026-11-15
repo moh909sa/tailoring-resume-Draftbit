@@ -3,7 +3,7 @@ import type { EditorAnalysis, EditorDocument, EditorSave, JsonObject } from "./t
 
 export type SaveState = "saved" | "saving" | "local" | "error" | "conflict";
 export type EditorWorkspace = {
-  tool: "content" | "templates" | "format" | "match";
+  tool: "content" | "templates" | "format";
   trayOpen: boolean;
   sectionKey: string | null;
   fieldPath: (string | number)[] | null;
@@ -32,7 +32,7 @@ export type EditorState = {
   analysisLoading: boolean;
 };
 export const emptyEditorState = (): EditorState => ({document: null, resume: null, layout: null, layoutDraft: null, layoutDraftDirty: false, workspace: emptyWorkspace(), confirmedSkills: [], loading: true, error: null, accessStatus: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false});
-type Backup = {version: 1; document: EditorDocument; resume: JsonObject; layout?: EditorLayout | null; confirmedSkills: string[]; pending: EditorSave | null; dirty: boolean; layoutDraft?: EditorLayout | null; layoutDraftDirty?: boolean; workspace?: EditorWorkspace};
+type Backup = {version: 1; document: EditorDocument; resume: JsonObject; layout?: EditorLayout | null; confirmedSkills: string[]; pending: EditorSave | null; dirty: boolean; layoutDraft?: EditorLayout | null; layoutDraftDirty?: boolean; workspace?: Omit<EditorWorkspace,"tool"> & {tool:EditorWorkspace["tool"] | "match"}};
 type Dependencies = {
   read: () => Promise<string | null>;
   write: (raw: string) => Promise<unknown>;
@@ -117,7 +117,7 @@ export class CvEditorSession {
           }
           const w = data.workspace;
           if (w && ["content","templates","format","match"].includes(w.tool)) this.change({workspace:{
-            ...emptyWorkspace(),tool:w.tool,trayOpen:w.trayOpen === true,
+            ...emptyWorkspace(),tool:w.tool === "match" ? "content" : w.tool,trayOpen:w.trayOpen === true,
             sectionKey:typeof w.sectionKey === "string" ? w.sectionKey : null,
             fieldPath:Array.isArray(w.fieldPath) && w.fieldPath.every(k=>typeof k === "string" || Number.isSafeInteger(k)) ? w.fieldPath : null,
             fieldLabel:typeof w.fieldLabel === "string" ? w.fieldLabel : null,

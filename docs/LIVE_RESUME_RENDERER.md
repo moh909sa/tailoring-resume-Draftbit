@@ -16,7 +16,7 @@ The existing WKWebView/browser PDF plugin has no first-page-painted callback. Lo
 
 ## Editing and platform behavior
 
-Content keeps the existing field bindings, rich text, custom sections, section actions and Job Match. The 44-point drag handle resizes the mounted tools panel independently of PDF viewing. Keyboard avoidance and caret-aware section scrolling remain in place. Templates is a scrollable two-column grid with all server options; Format retains its compact rows and Advanced controls.
+Content keeps the existing field bindings, rich text, custom sections and section actions. The header’s Job Match text button sits immediately left of PDF and pushes a dedicated screen using the same account/document session; Back returns to the mounted editor with its panel and edits intact. The 44-point drag handle resizes the mounted tools panel independently of PDF viewing. Keyboard avoidance and caret-aware section scrolling remain in place. Templates is a scrollable two-column grid with all server options; Format retains its compact rows and Advanced controls.
 
 Web uses its browser PDF iframe; iOS uses the existing local-file WKWebView. Their PDF gestures are platform-owned. Android retains the existing external PDF-app fallback. Native display, pinch/pan, keyboard and sharing need native-device validation.
 
