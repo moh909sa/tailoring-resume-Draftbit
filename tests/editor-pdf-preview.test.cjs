@@ -45,3 +45,10 @@ test('formatting uses 400 ms after the final tap while typing and text completio
  await wait(250);assert.equal(h.saves.length,1,'each tap restarts the formatting debounce');await wait(250);assert.equal(h.saves.length,2,'final formatting starts preview preparation after 400 ms rather than 700 ms');await until(()=>h.loads.length===2 && !h.controller.snapshot.updating);assert.equal(h.saves.at(-1).layout.fontSize.base,4);value={...value,revision:3};h.controller.update(value);assert.equal(h.controller.matches(value),true);
  value={...value,editing:true,resume:{...value.resume,summary:'Typed latest summary'}};h.controller.update(value);await wait(750);assert.equal(h.saves.length,2,'typing remains paused');value={...value,editing:false};h.controller.update(value);await wait(500);assert.equal(h.saves.length,2,'text completion retains 700 ms');await until(()=>h.saves.length===3);assert.equal(h.saves.at(-1).resume.summary,'Typed latest summary');
 });
+
+test('debug timing logs contain only measured durations and are silent when disabled',()=>{
+ const {PdfPreviewTimings}=load('lib/editor/pdfPreviewTimings.ts');const logs=[];let clock=100;
+ const timing=new PdfPreviewTimings(undefined,true,()=>clock,value=>logs.push(value));clock=500;timing.mark('debounceEnd');timing.mark('saveStart');clock=530;timing.mark('saveEnd');timing.mark('pdfFetchStart');clock=750;timing.mark('pdfFetchEnd');clock=810;timing.mark('viewerReady');
+ assert.deepEqual(logs.at(-1),{viewerReady:710,endToEnd:710,burstEndToEnd:710,debounce:400,writerWait:0,save:30,pdfFetch:220,viewer:60});assert.ok(logs.every(row=>Object.values(row).every(v=>typeof v==='number')));new PdfPreviewTimings(undefined,false,()=>clock,()=>assert.fail('release logging must be silent')).mark('viewerReady');
+ const old=new PdfPreviewTimings(undefined,true,()=>clock,()=>{});old.cancel();old.mark('pdfFetchEnd');
+});

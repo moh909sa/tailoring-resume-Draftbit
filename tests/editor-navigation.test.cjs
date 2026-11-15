@@ -774,3 +774,41 @@ test('a formatting change immediately before repaint cannot open a stale PDF',as
  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({...editor,layoutDraft:draft})}});
  const oldTap=h.button('Open PDF preview').props.onPress;editor.updateLayoutDraft({...draft,template:'deedy',pageSize:'LETTER'});oldTap();await h.pump();assert.deepEqual(h.calls,[]);
 });
+
+test('PDF handoff keeps the old artifact and indicator until viewer readiness, then publishes the identical replacement',async(t)=>{
+ const h=harness();t.after(()=>h.dispose());let document=makeDocument();let draft=document.layout;const files=[],disposed=[],published=[];
+ const editor={document,resume:document.resume,layout:document.layout,layoutDraft:draft,confirmedSkills:[],saveState:'saved',loading:false,updateLayoutDraft:value=>{draft=value;editor.layoutDraft=value;},saveForPdf:async()=>{if(document.layout!==draft){document={...document,revision:document.revision+1,layout:draft};editor.document=document;editor.layout=draft;}return document;}};
+ const realHook=load('lib/editor/useEditorPdf.ts',{...h.mocks,'./pdf':{loadEditorPdf:async(_owner,_id,revision)=>{const pdf={uri:'file:///handoff-'+revision+'.pdf',revision,filename:'cv.pdf',dispose:async()=>disposed.push(revision)};files.push(pdf);return pdf;}},'./pdfArtifacts':{editorPdfArtifacts:{publish:(_owner,_id,artifact)=>{published.push(artifact);return()=>{};}}}});
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor},'@/lib/editor/useEditorPdf':realHook});
+ const settle=async check=>{const deadline=Date.now()+2000;while(!check()){assert.ok(Date.now()<deadline,'timed out waiting for handoff');await new Promise(r=>setTimeout(r,10));await h.pump();}};
+ const surface=()=>h.find(n=>n.type==='CvPreviewSurface');await settle(()=>files.length===1&&surface());const old=files[0];assert.equal(h.button('Open PDF preview').props.disabled,true);surface().props.onViewerReady(old);await h.pump();assert.equal(h.button('Open PDF preview').props.disabled,false);
+ h.button('Templates').props.onPress();h.render();h.find(n=>n.type==='DesignLayout'&&n.props.mode==='templates').props.onChange({...draft,template:'swiss-two-column'});h.render();assert.ok(h.find(n=>n.props.testID==='preview-updating-overlay'));
+ await settle(()=>files.length===2&&surface()?.props.pendingPdf);const next=files[1];assert.equal(surface().props.pdf,old);assert.equal(surface().props.pendingPdf,next);assert.equal(h.button('Open PDF preview').props.disabled,true);assert.ok(h.find(n=>n.props.testID==='preview-updating-overlay'));assert.deepEqual(disposed,[],'the old viewer still owns a lease after PDF fetch');assert.equal(published.at(-1).pdf,old);
+ surface().props.onViewerReady(old);await h.pump();assert.equal(surface().props.pdf,old,'late old-viewer callback cannot enable preview');surface().props.onViewerReady(next);await h.pump();assert.equal(surface().props.pdf,next);assert.equal(surface().props.pendingPdf,null);assert.equal(h.button('Open PDF preview').props.disabled,false);assert.equal(h.find(n=>n.props.testID==='preview-updating-overlay'),undefined);assert.equal(published.at(-1).pdf,next);assert.deepEqual(disposed,[6]);
+});
+
+test('PDF layers keep the replacement viewer mounted with the same key during the handoff',()=>{
+ const h=harness(),{PdfCvRenderer}=load('components/editor/CvPreviewSurface.tsx',{...h.mocks,'./PdfViewer':{PdfViewer:'PdfViewer'}});const old={uri:'file:///old.pdf'},next={uri:'file:///next.pdf'};let ready;
+ const before=PdfCvRenderer({pdf:old,pendingPdf:next,onViewerReady:file=>ready=file,onError:()=>{}});const viewers=nodes(before).filter(n=>n.type==='PdfViewer');assert.deepEqual(viewers.map(n=>n.props.uri),[old.uri,next.uri]);viewers[1].props.onReady();assert.equal(ready,next);const nextLayer=nodes(before).find(n=>n.key===next.uri);assert.equal(nextLayer.props.pointerEvents,'none');assert.match(nextLayer.props.className,/z-0/);
+ const after=PdfCvRenderer({pdf:next,pendingPdf:null,onError:()=>{}});const retained=nodes(after).find(n=>n.key===next.uri);assert.equal(retained.key,nextLayer.key);assert.equal(retained.props.pointerEvents,'auto');assert.match(retained.props.className,/z-10/);h.dispose();
+});
+
+test('web and iOS PDF load readiness waits for two frames; errors and unmount cancel pending callbacks',()=>{
+ const originalRaf=globalThis.requestAnimationFrame,originalCancel=globalThis.cancelAnimationFrame;const frames=new Map();let sequence=0;
+ globalThis.requestAnimationFrame=callback=>{frames.set(++sequence,callback);return sequence;};globalThis.cancelAnimationFrame=id=>frames.delete(id);
+ const frame=()=>{const callbacks=[...frames.values()];frames.clear();callbacks.forEach(fn=>fn());};
+ try{for(const platform of ['web','ios']){
+  const h=harness();h.mocks['react-native'].Platform.OS=platform;let ready=0,errors=0;const props={uri:'file:///loaded.pdf',onReady:()=>ready++,onError:()=>errors++};
+  h.open('components/editor/PdfViewer.'+(platform==='ios'?'native':'web')+'.tsx',{'react-native-webview':{WebView:'WebView'}},'PdfViewer',props);const viewer=()=>h.find(n=>n.type===(platform==='ios'?'WebView':'iframe'));
+  viewer().props.onLoad();assert.equal(ready,0);frame();assert.equal(ready,0);frame();assert.equal(ready,1);
+  viewer().props.onLoad();viewer().props.onError();frame();frame();assert.equal(ready,1);assert.equal(errors,1);
+  props.uri='file:///new.pdf';h.render();viewer().props.onLoad();h.dispose();frame();frame();assert.equal(ready,1);
+ }}finally{globalThis.requestAnimationFrame=originalRaf;globalThis.cancelAnimationFrame=originalCancel;}
+});
+
+test('template and formatting controls mark each tap for timing without generating extra previews',()=>{
+ const h=harness(),document=makeDocument();let taps=0;const changes=[];h.pdf={pdf:{uri:'file:///same.pdf',revision:6},ready:true,formatTap:()=>taps++};
+ h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({document,resume:document.resume,layout:document.layout,layoutDraft:document.layout,confirmedSkills:[],saveState:'saved',loading:false,updateLayoutDraft:next=>changes.push(next)})}});
+ h.button('Templates').props.onPress();h.render();h.find(n=>n.type==='DesignLayout'&&n.props.mode==='templates').props.onChange({...document.layout,template:'deedy'});assert.equal(taps,1);
+ h.button('Format').props.onPress();h.render();for(const base of [4,5,4])h.find(n=>n.type==='DesignLayout'&&n.props.mode==='format').props.onChange({...document.layout,fontSize:{...document.layout.fontSize,base}});assert.equal(taps,4);assert.equal(changes.length,4);assert.deepEqual(h.calls,[]);h.dispose();
+});

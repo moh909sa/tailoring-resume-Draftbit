@@ -59,3 +59,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Templates presents all engine options in one grid with local single/sidebar layouts; explicit PDF preparation waits for refresh and serializes the layout captured at the tap.
 
 - Edit Resume uses the actual revision-pinned Railway PDF, with debounced saves after formatting or field completion and one leased artifact for inline view, preview and download.
+
+- Inline PDF updates use leased layers and viewer-load readiness before handoff; debug-only duration logs distinguish readiness from unobservable native first-page paint.
