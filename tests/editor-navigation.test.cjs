@@ -247,10 +247,10 @@ test("Job Match does not turn role keywords into invented skills, and confirmed 
   const h=harness();const added=[];
   const props={analysis:{status:'current',revision:1,score:{overall_score:70,sub_scores:{},recommendations:[]},missing_keywords:['Senior engineer','Python'],matched_keywords:[],required_skills:['Python'],preferred_skills:[],total_keywords:2,matched_count:0},revision:1,dirty:false,loading:false,jobDescription:'Full job',confirmedSkills:['Python'],onAddSkill:skill=>added.push(skill),onRefresh:()=>{},onEdit:()=>{}};
   h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
-  h.find(n=>n.props.accessibilityLabel==='Missing Keywords').props.onPress();const tree=h.render();
+  h.button('Add skills I have').props.onPress();const tree=h.render();
   const buttons=nodes(tree).filter(n=>n.props.accessibilityLabel?.includes('add to Skills'));
   assert.equal(buttons.length,1);buttons[0].props.onPress();assert.deepEqual(added,['Python']);
-  assert.match(text(tree),/Senior engineer/);assert.match(text(tree),/Job keyword/);
+  assert.match(text(tree),/Senior engineer/);assert.match(text(tree),/Other job keywords/);
 });
 
 test("leaving while a save is in flight cannot reopen a late PDF preview", async () => {
@@ -384,17 +384,17 @@ test('editor sections respect saved names/order while keeping Personal Informati
   assert.ok(next.workExperience[0].id);assert.deepEqual(next.workExperience[0].description,[]);
 });
 
-test('Job Match keeps engine precision, disclosure order and stale evidence boundaries',()=>{
+test('Job Match Overview preserves engine precision, section order and stale evidence boundaries',()=>{
   const h=harness();let updates=0;
-  const props={analysis:{status:'current',revision:6,score:{overall_score:72.4,sub_scores:{keyword_match:66.7,skills_coverage:89.3},recommendations:['Use accurate examples.']},matched_keywords:['Python','SQL'],missing_keywords:['React'],required_skills:['React'],preferred_skills:[],matched_count:2,total_keywords:3},revision:6,dirty:false,loading:false,jobDescription:'Full saved job description',confirmedSkills:['Python'],onRefresh:()=>updates++,onAddSkill:()=>{},onEdit:()=>{}};
+  const props={analysis:{status:'current',revision:6,score:{overall_score:72.4,sub_scores:{skills_coverage:89.3,keyword_match:66.7},recommendations:['Use accurate examples.']},matched_keywords:['Python','SQL'],missing_keywords:['React'],required_skills:['React'],preferred_skills:[],matched_count:2,total_keywords:3},revision:6,dirty:false,loading:false,jobDescription:'Full saved job description',confirmedSkills:['Python'],onRefresh:()=>updates++,onAddSkill:()=>{},onEdit:()=>{}};
   h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
-  assert.match(h.getText(),/72\.4/);assert.match(h.getText(),/66\.7%/);assert.match(h.getText(),/2 of 3/);
-  const titles=['ATS Score Breakdown','Missing Keywords','Recommendations','About Job Match & Tips'];
-  assert.deepEqual(nodes(h.render()).filter(n=>titles.includes(n.props.accessibilityLabel)).map(n=>n.props.accessibilityLabel),titles);
-  assert.equal(h.find(n=>n.props.accessibilityLabel==='ATS Score Breakdown').props.accessibilityState.expanded,false);
-  h.find(n=>n.props.accessibilityLabel==='ATS Score Breakdown').props.onPress();h.render();assert.match(h.getText(),/89\.3 \/ 100/);
+  assert.match(h.getText(),/72\.4/);assert.match(h.getText(),/66\.7%/);assert.match(h.getText(),/89\.3%/);assert.match(h.getText(),/2 of 3/);
+  const titles=['ATS Score Breakdown','Missing Keywords','Recommendations','About JD Match','Tips'];
+  assert.deepEqual(nodes(h.render()).filter(n=>n.props.accessibilityRole==='header').map(text),titles);
+  assert.deepEqual(nodes(h.render()).filter(n=>n.props.accessibilityRole==='progressbar').map(n=>n.props.accessibilityLabel),['Overall score','Keyword Match','Skills Coverage','Title Match','Section Completeness','Date Consistency']);
+  assert.match(h.getText(),/Use accurate examples/);assert.doesNotMatch(h.getText(),/Highlighted Keywords|Yellow:|Blue:/);
   props.section='highlights';h.render();
-  assert.match(h.getText(),/Python · SQL/);assert.match(h.getText(),/Yellow: matched keywords/);assert.match(h.getText(),/Blue: keywords you added/);
+  assert.match(h.getText(),/Python · SQL/);assert.match(h.getText(),/Highlighted Keywords/);assert.match(h.getText(),/Yellow: matched keywords/);assert.match(h.getText(),/Blue: keywords you added/);
   assert.equal(h.find(n=>n.type==='Text'&&n.props.className?.includes('text-tertiary')&&text(n).includes('Python')),undefined,'confirmed skill strings do not establish blue placement evidence');
   props.dirty=true;h.render();assert.doesNotMatch(h.getText(),/Python · SQL/);assert.match(h.getText(),/Update Match to verify/);
   props.section='overview';h.render();assert.match(h.getText(),/Needs updating/);h.button('Save & Update Match').props.onPress();assert.equal(updates,1);
@@ -403,7 +403,31 @@ test('Job Match keeps engine precision, disclosure order and stale evidence boun
   h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Description').props.onPress();h.render();assert.match(h.getText(),/Full saved job description/);
   props.section='overview';h.render();props.section='highlights';h.render();
   assert.equal(h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Description').props.accessibilityState.selected,true);
-  props.analysis=null;props.section='overview';h.render();assert.match(h.getText(),/Not calculated/);assert.doesNotMatch(h.getText(),/72\.4/);h.dispose();
+  props.analysis=null;props.section='overview';h.render();assert.match(h.getText(),/Not calculated/);assert.match(h.getText(),/Unavailable/);assert.doesNotMatch(h.getText(),/72\.4/);h.dispose();
+});
+
+test('Overview distinguishes genuine zero, full scores and unavailable metrics without inventing values',()=>{
+  const h=harness();const props={analysis:{status:'current',revision:1,score:{overall_score:0,sub_scores:{keyword_match:0,skills_coverage:100,title_match:null,title_alignment:99,section_completeness:70.8},recommendations:[]},matched_keywords:[],missing_keywords:[],required_skills:[],preferred_skills:[],matched_count:0,total_keywords:0},revision:1,dirty:false,loading:false,jobDescription:'Job',confirmedSkills:[],onRefresh:()=>{},onAddSkill:()=>{},onEdit:()=>{}};
+  h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
+  const bar=label=>h.find(n=>n.props.accessibilityRole==='progressbar'&&n.props.accessibilityLabel===label);
+  const fill=label=>nodes(bar(label)).find(n=>n.props.testID==='score-bar-fill');
+  assert.equal(bar('Overall score').props.accessibilityValue.now,0);assert.equal(fill('Overall score'),undefined);assert.equal(fill('Keyword Match'),undefined);
+  assert.equal(bar('Skills Coverage').props.accessibilityValue.now,100);assert.equal(fill('Skills Coverage').props.style.width,'100%');assert.match(fill('Skills Coverage').props.className,/bg-success/);
+  assert.equal(fill('Section Completeness').props.style.width,'70.8%');assert.match(fill('Section Completeness').props.className,/bg-score-moderate/);
+  assert.deepEqual(bar('Title Match').props.accessibilityValue,{text:'Unavailable'});assert.deepEqual(bar('Date Consistency').props.accessibilityValue,{text:'Unavailable'});assert.equal(fill('Title Match'),undefined);assert.doesNotMatch(h.getText(),/99%/);
+  props.analysis.score.overall_score=100;props.analysis.score.sub_scores.keyword_match=20;h.render();assert.equal(fill('Overall score').props.style.width,'100%');assert.equal(fill('Keyword Match').props.style.width,'20%');assert.match(fill('Keyword Match').props.className,/bg-destructive/);
+  props.analysis.score=null;h.render();assert.equal(bar('Overall score').props.accessibilityValue.text,'Unavailable');assert.equal(fill('Overall score'),undefined);assert.match(h.getText(),/Unavailable/);h.dispose();
+});
+
+test('Overview retains long keyword phrases and gates layout warnings on the actual selected template',()=>{
+  const h=harness();const long='English communication (written and spoken) with cross-functional technical support teams';
+  const props={analysis:{status:'current',revision:1,score:{overall_score:67.3,sub_scores:{},recommendations:['Use the accurate job title.','Keep this complete second recommendation.']},missing_keywords:[long,'Oracle NetSuite',long],required_skills:[],preferred_skills:[],matched_count:0,total_keywords:2},revision:1,dirty:false,loading:false,template:'swiss-two-column',jobDescription:'Job',confirmedSkills:[],onRefresh:()=>{},onAddSkill:()=>{},onEdit:()=>{}};
+  h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
+  let tree=h.render(),chips=nodes(tree).filter(n=>n.props.testID==='missing-keyword-chip');assert.equal(chips.length,2);assert.equal(text(chips[0]),long);assert.match(chips[0].props.className,/max-w-full/);assert.equal(nodes(chips[0]).find(n=>n.type==='Text').props.numberOfLines,undefined);
+  const warning=h.find(n=>n.props.testID==='ats-layout-warning');assert.ok(warning);assert.ok(text(tree).indexOf('Date Consistency')<text(tree).indexOf('Two-column layout:'));assert.ok(text(tree).indexOf('Two-column layout:')<text(tree).indexOf('Missing Keywords'));assert.match(h.getText(),/complete second recommendation/);
+  for(const template of ['swiss-single','modern','vivid-single','modern-deedy',undefined]){props.template=template;h.render();assert.equal(h.find(n=>n.props.testID==='ats-layout-warning'),undefined);}
+  for(const template of ['swiss-two-column','modern-two-column','vivid','deedy']){props.template=template;h.render();assert.ok(h.find(n=>n.props.testID==='ats-layout-warning'));}
+  h.dispose();
 });
 
 test('Templates retains server controls while PDF remains disabled until the displayed file catches up',async()=>{

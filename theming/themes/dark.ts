@@ -19,6 +19,8 @@ const darkTheme: Theme = {
     mutedForeground: "hsl(240 5% 64.9%)",
     accent: "hsl(240 3.7% 15.9%)",
     accentForeground: "hsl(0 0% 98%)",
+    scoreLow: "hsl(0 85% 72%)",
+    scoreModerate: "hsl(27 96% 61%)",
     success: "hsl(142 70.6% 45.3%)",
     successForeground: "hsl(0 0% 98%)",
     warning: "hsl(45 100% 51%)",

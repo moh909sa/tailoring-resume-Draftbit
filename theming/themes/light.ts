@@ -19,6 +19,8 @@ const lightTheme: Theme = {
     mutedForeground: "hsl(240 3.8% 46.1%)",
     accent: "hsl(240 4.8% 95.9%)",
     accentForeground: "hsl(240 5.9% 10%)",
+    scoreLow: "hsl(0 72% 43%)",
+    scoreModerate: "hsl(21 90% 38%)",
     success: "hsl(142 71% 30%)",
     successForeground: "hsl(0 0% 98%)",
     warning: "hsl(45 100% 51%)",

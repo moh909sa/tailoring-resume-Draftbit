@@ -26,6 +26,8 @@ export interface Theme {
     accentForeground?: string;
     destructive?: string;
     destructiveForeground?: string;
+    scoreLow?: string;
+    scoreModerate?: string;
     success?: string;
     successForeground?: string;
     warning?: string;

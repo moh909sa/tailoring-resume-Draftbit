@@ -16,6 +16,8 @@ All editor operations require the existing Supabase bearer session and ownership
 
 `GET/POST /api/v1/mobile/tailored-cvs/{id}/ats-score` retrieves or recalculates analysis; POST accepts `expected_revision`. Results include current/stale/unavailable status, analyzed revision, calculation time, job hash, scoring version, score breakdown, complete matched/missing evidence, and required/preferred skills. Recalculation is deterministic from cached job extraction, without AI generation. Missing extraction remains unavailable rather than a fabricated score. Rendering and scoring normalize visible supported content consistently.
 
+Overview presents Keyword Match, Skills Coverage, Title Match, Section Completeness and Date Consistency in that order, retaining exact engine values and unavailable metrics. Score colors use the existing engine UI bands (high ≥ 80, moderate ≥ 60); colors never affect calculation. The two-column warning follows the selected export template (Swiss Two Column, Modern Two Column, Vivid and Deedy), independently of scoring. Missing keywords and complete recommendations share the outlined breakdown card; About JD Match and Tips follow. Keyword Highlights retains its tab behavior and evidence limits, including the explanation and color legend.
+
 User-confirmed skills can be saved freely alongside their resume edits. Confirmation means the user personally attested possession; it does not fabricate work history, certificates, or achievements.
 
 ### Mobile editor layout and evidence limits

@@ -39,6 +39,12 @@ module.exports = {
           DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
           foreground: 'hsl(var(--destructiveForeground) / <alpha-value>)',
         },
+        'score-low': {
+          DEFAULT: 'hsl(var(--scoreLow) / <alpha-value>)',
+        },
+        'score-moderate': {
+          DEFAULT: 'hsl(var(--scoreModerate) / <alpha-value>)',
+        },
         success: {
           DEFAULT: 'hsl(var(--success) / <alpha-value>)',
           foreground: 'hsl(var(--successForeground) / <alpha-value>)',

@@ -28,6 +28,7 @@ Web uses its browser PDF iframe; iOS uses the existing local-file WKWebView. The
 
 Template IDs, maps/presets and presentation rules are adapted from Resume-Matcher, copyright its contributors, under Apache-2.0. Sources:
 
+- [ATS score card](https://github.com/moh909sa/Resume-Matcher-Railway/blob/main/apps/frontend/components/tailor/ats-score-card.tsx): score display bands, breakdown order and template-driven layout advisory.
 - [template-settings.ts](https://github.com/moh909sa/Resume-Matcher-Railway/blob/main/apps/frontend/lib/types/template-settings.ts): font/spacing levels, compact multipliers, sizes, accents and Clean preset.
 - [resume styles](https://github.com/moh909sa/Resume-Matcher-Railway/tree/main/apps/frontend/components/resume/styles): _base, _tokens and all ten template styles, including swiss-two-column, modern-two-column, latex, vivid, modern-deedy and deedy.
 - [resume components](https://github.com/moh909sa/Resume-Matcher-Railway/tree/main/apps/frontend/components/resume): template presentation and supported content.

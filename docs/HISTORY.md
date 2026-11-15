@@ -63,3 +63,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Inline PDF updates use leased layers and viewer-load readiness before handoff; debug-only duration logs distinguish readiness from unobservable native first-page paint.
 
 - Job Match opens from the editor header beside PDF in a dedicated screen, sharing the saved CV session and retaining the editor panel and edits on Back.
+
+- Job Match Overview groups real scores, template-aware ATS guidance, missing-keyword chips and recommendations in one breakdown card, followed by About JD Match and Tips; highlight guidance stays in Keyword Highlights.
