@@ -1,3 +1,5 @@
+import { isJsonObject, stringList } from "@/lib/tailoring/types";
+import type { KeywordHistory } from "./keywordHighlights";
 import { apiErrorMessage, CvApiError, mobileAccessToken, mobileEndpoint } from "@/lib/cv/api";
 import { parseEditorAnalysis, parseEditorDocument, parseTailoredCvs, parsePdfCheck, type EditorDocument, type EditorSave } from "./types";
 
@@ -45,3 +47,33 @@ export const checkEditorPdf = (ownerId: string, id: string, revision: number, si
   if (check.revision !== revision) throw new Error("This check belongs to another saved version. Check the PDF again.");
   return check;
 }, "POST", {expected_revision: revision});
+
+// Existing owned saved-CV and original-CV endpoints retain the source and tracked
+// comparisons. No mutation or scoring request is needed to locate phrases.
+export async function getEditorKeywordHistory(ownerId: string, id: string, signal: AbortSignal): Promise<KeywordHistory> {
+  const record = await request(ownerId, pathFor(id), signal, value => {
+    if (!isJsonObject(value) || value.id !== id || value.status !== "ready") throw new Error("Keyword history belongs to another CV.");
+    return value;
+  });
+  const preview = isJsonObject(record.preview_json) ? record.preview_json : {};
+  const changes: KeywordHistory["changes"] = [];
+  for (const change of Array.isArray(preview.detailed_changes) ? preview.detailed_changes : []) {
+    if (isJsonObject(change) && typeof change.field_path === "string" && typeof change.new_value === "string" && (typeof change.original_value === "string" || change.change_type === "added")) changes.push({path:change.field_path,before:typeof change.original_value === "string" ? change.original_value : "",after:change.new_value});
+  }
+  const keywords = (Array.isArray(preview.keyword_placements) ? preview.keyword_placements : []).flatMap(item => isJsonObject(item) && typeof item.keyword === "string" ? [item.keyword] : []);
+  keywords.push(...stringList(isJsonObject(preview._mobile) ? preview._mobile.applied_keywords : null));
+  let original: KeywordHistory["original"] = null;
+  if (typeof record.source_resume_id === "string" && record.source_resume_id) {
+    const sourceId = record.source_resume_id;
+    try {
+      original = await request(ownerId, "/resumes/" + encodeURIComponent(sourceId), signal, value => {
+        if (!isJsonObject(value) || value.id !== sourceId || value.processing_status !== "ready" || !isJsonObject(value.processed_resume) || !Object.keys(value.processed_resume).length) return null;
+        return value.processed_resume;
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      // Missing/deleted originals must not hide the saved CV or verified changes.
+    }
+  }
+  return { original, changes, keywords };
+}

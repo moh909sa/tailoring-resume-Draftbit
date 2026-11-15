@@ -39,6 +39,14 @@ module.exports = {
           DEFAULT: 'hsl(var(--destructive) / <alpha-value>)',
           foreground: 'hsl(var(--destructiveForeground) / <alpha-value>)',
         },
+        'highlight-matched': {
+          DEFAULT: 'hsl(var(--highlightMatched) / <alpha-value>)',
+          foreground: 'hsl(var(--highlightMatchedForeground) / <alpha-value>)',
+        },
+        'highlight-added': {
+          DEFAULT: 'hsl(var(--highlightAdded) / <alpha-value>)',
+          foreground: 'hsl(var(--highlightAddedForeground) / <alpha-value>)',
+        },
         'score-low': {
           DEFAULT: 'hsl(var(--scoreLow) / <alpha-value>)',
         },

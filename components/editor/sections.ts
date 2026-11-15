@@ -1,3 +1,5 @@
+import { plainText } from "@/lib/editor/resumeText";
+export { plainText } from "@/lib/editor/resumeText";
 import { isJsonObject, type JsonObject, type JsonValue } from "@/lib/tailoring/types";
 import { readableLabel } from "@/components/tailoring/ReviewContent";
 
@@ -11,15 +13,6 @@ const titles: Record<string, string> = {
   education: "Education", personalProjects: "Projects", technicalSkills: "Skills", skills: "Skills", professionalSkills: "Skills", certificationsTraining: "Certifications & training", additional: "Skills",
 };
 
-export function plainText(value: string): string {
-  const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-  return value.replace(/<br\s*\/?\s*>/gi, "\n").replace(/<\/(p|div|li)>/gi, "\n").replace(/<[^>]*>/g, "")
-    .replace(/&(#x[\da-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (match, entity: string) => {
-      if (entity[0] !== "#") return entities[entity.toLowerCase()] ?? match;
-      const code = entity[1].toLowerCase() === "x" ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
-      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
-    });
-}
 
 export function sectionSummary(value: JsonValue): string {
   if (typeof value === "string") return plainText(value) || "Add your details";

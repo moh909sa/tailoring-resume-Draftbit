@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { ActivityIndicator, Pressable, View, type DimensionValue } from "react-native";
+import { ActivityIndicator, View, type DimensionValue } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { KeywordHighlights } from "./KeywordHighlights";
+import type { JsonObject } from "@/lib/tailoring/types";
+import type { KeywordHistory } from "@/lib/editor/keywordHighlights";
 import type { EditorAnalysis } from "@/lib/editor/types";
 
 export type JobMatchProps = {
@@ -13,6 +16,11 @@ export type JobMatchProps = {
   error?: string | null;
   template?: string;
   jobDescription: string;
+  savedResume?: JsonObject;
+  history?: KeywordHistory | null;
+  historyLoading?: boolean;
+  historyError?: boolean;
+  onRetryHistory?: () => void;
   confirmedSkills: string[];
   onRefresh: () => void;
   onAddSkill: (skill: string) => void;
@@ -41,9 +49,8 @@ const tips = [
   "Use accurate action verbs to describe what you did.",
 ];
 
-export function JobMatch({ section = "overview", analysis, revision, dirty, loading, error, template, jobDescription, confirmedSkills, onRefresh, onAddSkill, onEdit }: JobMatchProps) {
+export function JobMatch({ section = "overview", analysis, revision, dirty, loading, error, template, jobDescription, savedResume, history = null, historyLoading, historyError, onRetryHistory, confirmedSkills, onRefresh, onAddSkill, onEdit }: JobMatchProps) {
   const [showSkillChoices, setShowSkillChoices] = useState(false);
-  const [highlightView, setHighlightView] = useState<"resume" | "job">("resume");
   const current = !dirty && analysis?.status === "current" && analysis.revision === revision;
   const score = analysis?.score;
   const overall = score?.overall_score ?? null;
@@ -110,19 +117,6 @@ export function JobMatch({ section = "overview", analysis, revision, dirty, load
       <View className="gap-2 rounded border border-foreground/25 bg-card p-4"><Text accessibilityRole="header" className="text-h6 text-foreground">About JD Match</Text><Text className="text-body leading-6 text-foreground">Job Match compares your resume with the job description to show where your skills and experience align. Scores are estimates and don’t predict an employer’s decision.</Text></View>
       <View className="gap-2 rounded border border-foreground/25 bg-card p-4"><Text accessibilityRole="header" className="text-h6 text-foreground">Tips</Text>{bullets(tips)}</View>
     </> : null}
-    {section === "highlights" ? <View className="gap-4 rounded-2xl border border-border bg-card p-5">
-      <Text accessibilityRole="header" className="text-h4 text-foreground">Keyword Highlights</Text>
-      <View className="flex-row rounded-xl bg-muted p-1">{(["resume", "job"] as const).map(tab => <Pressable key={tab} accessibilityRole="tab" accessibilityState={{ selected: highlightView === tab }} onPress={() => setHighlightView(tab)} className={`min-h-11 flex-1 items-center justify-center rounded-lg ${highlightView === tab ? "bg-card" : "bg-muted"}`}><Text className={highlightView === tab ? "text-caption text-foreground" : "text-caption text-muted-foreground"}>{tab === "resume" ? "Your Resume" : "Job Description"}</Text></Pressable>)}</View>
-      <View className="gap-2"><Text accessibilityRole="header" className="text-h6 text-foreground">Highlighted Keywords</Text><Text className="text-body leading-6 text-muted-foreground">Matched keywords appear in both your resume and the job description. Review them to see where the two align.</Text></View>
-      <View className="flex-row flex-wrap gap-3">
-        <View className="flex-row items-center gap-2"><View className="h-3 w-3 rounded-sm bg-warning" /><Text className="text-caption text-foreground">Yellow: matched keywords</Text></View>
-        <View className="flex-row items-center gap-2"><View className="h-3 w-3 rounded-sm bg-tertiary" /><Text className="text-caption text-foreground">Blue: keywords you added</Text></View>
-      </View>
-      <Text className="text-caption leading-5 text-muted-foreground">Exact text locations and added-keyword highlights aren’t available for this saved CV. Your PDF stays unchanged.</Text>
-      {highlightView === "resume" ? <>
-        <Text className="text-body font-semibold text-foreground">Matched keywords in your saved resume</Text>
-        {!current ? <Text className="text-body leading-6 text-muted-foreground">Update Match to verify the keywords in your latest saved CV.</Text> : analysis?.matched_keywords.length ? <View className="rounded-xl bg-warning/15 p-3"><Text selectable className="text-body leading-7 text-foreground">{analysis.matched_keywords.join(" · ")}</Text></View> : <Text className="text-body text-muted-foreground">No matched keywords were reported.</Text>}
-      </> : <><Text className="text-body font-semibold text-foreground">Job Description</Text><Text selectable className="text-body leading-6 text-muted-foreground">{jobDescription || "The job description is unavailable for this CV."}</Text></>}
-    </View> : null}
+    {section === "highlights" ? savedResume ? <KeywordHighlights resume={savedResume} keywords={[...(analysis?.matched_keywords ?? []), ...(analysis?.missing_keywords ?? []), ...(analysis?.required_skills ?? []), ...(analysis?.preferred_skills ?? [])]} jobDescription={jobDescription} history={history} historyLoading={historyLoading} historyError={historyError} onRetry={onRetryHistory} /> : <Text className="text-body leading-6 text-muted-foreground">The saved resume could not be loaded. Return to Edit Resume and try again.</Text> : null}
   </View>;
 }

@@ -10,6 +10,7 @@ import { AccountSheet } from "@/components/cv/AccountSheet";
 import { JobMatch } from "@/components/editor/JobMatch";
 import LucideIcon from "@/lib/icons/LucideIcon";
 import { useAuth } from "@/lib/auth/AuthProvider";
+import { useKeywordHistory } from "@/lib/editor/useKeywordHistory";
 import { useCvEditor } from "@/lib/editor/useCvEditor";
 import { emptyWorkspace } from "@/lib/editor/session";
 import { replaceSection, resumeSections, withSectionMetadata } from "@/components/editor/sections";
@@ -23,6 +24,7 @@ export default function JobMatchScreen() {
   const editor = useCvEditor(id);
   const document = editor.document;
   const workspace = editor.workspace ?? emptyWorkspace();
+  const keywordHistory = useKeywordHistory(session?.user.id, document?.tailoring_id, workspace.matchSection === "highlights");
   const sections = editor.resume ? resumeSections(editor.resume) : [];
   const [showSignIn, setShowSignIn] = useState(false);
   const back = () => {
@@ -66,7 +68,7 @@ export default function JobMatchScreen() {
           {([["overview", "Overview"], ["highlights", "Keyword Highlights"]] as const).map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: workspace.matchSection === key }} onPress={() => editor.updateWorkspace({ matchSection: key })} className={cn("min-h-11 native:min-h-[44px] flex-1 items-center justify-center border-b-2 bg-background px-1", workspace.matchSection === key ? "border-primary" : "border-transparent")}><Text className={cn("text-caption", workspace.matchSection === key ? "text-primary" : "text-muted-foreground")}>{label}</Text></Pressable>)}
         </View>
         <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 pt-3" contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) }} keyboardShouldPersistTaps="handled">
-          <JobMatch template={editor.layoutDraft?.template ?? editor.layout?.template ?? document.layout?.template} section={workspace.matchSection} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={() => void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection} />
+          <JobMatch savedResume={document.resume} history={keywordHistory.history} historyLoading={keywordHistory.historyLoading} historyError={keywordHistory.historyError} onRetryHistory={keywordHistory.retryHistory} template={editor.layoutDraft?.template ?? editor.layout?.template ?? document.layout?.template} section={workspace.matchSection} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={editor.analysisLoading} jobDescription={document.job.description} confirmedSkills={editor.confirmedSkills} onRefresh={() => void editor.refreshAnalysis()} onAddSkill={addSkill} onEdit={openSection} />
         </ScrollView>
       </View>}
     <AccountSheet visible={showSignIn} onClose={() => { setShowSignIn(false); void editor.reload(); }} />

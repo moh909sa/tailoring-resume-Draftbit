@@ -26,6 +26,10 @@ export interface Theme {
     accentForeground?: string;
     destructive?: string;
     destructiveForeground?: string;
+    highlightMatched?: string;
+    highlightMatchedForeground?: string;
+    highlightAdded?: string;
+    highlightAddedForeground?: string;
     scoreLow?: string;
     scoreModerate?: string;
     success?: string;

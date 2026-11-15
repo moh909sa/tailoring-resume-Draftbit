@@ -38,13 +38,13 @@ function load(relative, mocks = {}) {
 function nodes(value) {
   if (!value || typeof value !== "object") return [];
   if (Array.isArray(value)) return value.flatMap(nodes);
-  const children=typeof value.type === "function" && ["ResumeSectionList","SectionActions","LevelControl","FontControl","LayoutFormatting"].includes(value.type.name) ? value.type(value.props) : value.type === "EditorControlsPanel" ? [value.props.toolbar,value.props.children] : value.props?.children;
+  const children=typeof value.type === "function" && ["ResumeSectionList","SectionActions","LevelControl","FontControl","LayoutFormatting","HighlightedResume","ResumeValue","HighlightText"].includes(value.type.name) ? value.type(value.props) : value.type === "EditorControlsPanel" ? [value.props.toolbar,value.props.children] : value.props?.children;
   return [value,...nodes(children)];
 }
 function text(value) {
   if (value == null || typeof value === "boolean") return "";
   if (Array.isArray(value)) return value.map(text).join("");
-  if(typeof value === "object" && typeof value.type === "function" && ["ResumeSectionList","SectionActions","LevelControl","FontControl","LayoutFormatting"].includes(value.type.name)) return text(value.type(value.props));
+  if(typeof value === "object" && typeof value.type === "function" && ["ResumeSectionList","SectionActions","LevelControl","FontControl","LayoutFormatting","HighlightedResume","ResumeValue","HighlightText"].includes(value.type.name)) return text(value.type(value.props));
   return typeof value === "object" ? text(value.type === "EditorControlsPanel"?[value.props.toolbar,value.props.children]:value.props?.children) : String(value);
 }
 function harness() {
@@ -62,6 +62,7 @@ function harness() {
   const router={dismissTo:href=>h.calls.push(["dismissTo",href]),push:href=>h.calls.push(["push",href]),replace:href=>h.calls.push(["replace",href]),back:()=>h.calls.push(["back"]),navigate:href=>h.calls.push(["navigate",href]),canGoBack:()=>h.canGoBack};
   const mocks={
     react:hooks,
+    "@/lib/editor/useKeywordHistory":{useKeywordHistory:()=>({history:null,historyLoading:false,historyError:false,retryHistory:()=>{}})},
     "./EditorFieldActivity":{useEditorFieldActivity:()=>()=>{}},
     "@/lib/editor/useEditorPdf":{useEditorPdf:input=>h.pdf??{pdf:input?{uri:`file:///same-${input.revision}.pdf`,revision:input.revision,filename:"cv.pdf",dispose:async()=>{}}:null,ready:!!input&&input.saveState==="saved",saveError:null,error:null,signature:input?JSON.stringify([input.resume,input.layout,input.skills]):null,retry:()=>{},acknowledged:null}},
     "react-native":{StyleSheet:{create:styles=>styles},View:"View",Text:"Text",Pressable:"Pressable",ScrollView:"ScrollView",FlatList:"FlatList",ActivityIndicator:"Spinner",KeyboardAvoidingView:"KeyboardAvoidingView",Platform:{OS:"web"},Keyboard:{dismiss(){},metrics:()=>undefined},useWindowDimensions:()=>({width:390,height:844}),AppState:{addEventListener:()=>({remove(){}})}},
@@ -393,16 +394,16 @@ test('Job Match Overview preserves engine precision, section order and stale evi
   assert.deepEqual(nodes(h.render()).filter(n=>n.props.accessibilityRole==='header').map(text),titles);
   assert.deepEqual(nodes(h.render()).filter(n=>n.props.accessibilityRole==='progressbar').map(n=>n.props.accessibilityLabel),['Overall score','Keyword Match','Skills Coverage','Title Match','Section Completeness','Date Consistency']);
   assert.match(h.getText(),/Use accurate examples/);assert.doesNotMatch(h.getText(),/Highlighted Keywords|Yellow:|Blue:/);
+  props.savedResume={summary:'Python and SQL'};
   props.section='highlights';h.render();
-  assert.match(h.getText(),/Python · SQL/);assert.match(h.getText(),/Highlighted Keywords/);assert.match(h.getText(),/Yellow: matched keywords/);assert.match(h.getText(),/Blue: keywords you added/);
-  assert.equal(h.find(n=>n.type==='Text'&&n.props.className?.includes('text-tertiary')&&text(n).includes('Python')),undefined,'confirmed skill strings do not establish blue placement evidence');
-  props.dirty=true;h.render();assert.doesNotMatch(h.getText(),/Python · SQL/);assert.match(h.getText(),/Update Match to verify/);
+  const highlights=h.find(n=>typeof n.type==='function'&&n.type.name==='KeywordHighlights');
+  assert.deepEqual(highlights.props.resume,props.savedResume);assert.ok(highlights.props.keywords.includes('Python'));
+  assert.equal(h.find(n=>n.props.accessibilityRole==='tab'),undefined,'there is no nested resume/job switcher');
+  assert.doesNotMatch(h.getText(),/Full saved job description/);
+  props.dirty=true;h.render();assert.deepEqual(h.find(n=>typeof n.type==='function'&&n.type.name==='KeywordHighlights').props.resume,props.savedResume,'in-progress edits do not hide the saved document');
   props.section='overview';h.render();assert.match(h.getText(),/Needs updating/);h.button('Save & Update Match').props.onPress();assert.equal(updates,1);
   props.dirty=false;props.revision=7;h.render();assert.match(h.getText(),/Previous result for version 6/);
-  props.section='highlights';h.render();assert.doesNotMatch(h.getText(),/Python · SQL/);
-  h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Description').props.onPress();h.render();assert.match(h.getText(),/Full saved job description/);
-  props.section='overview';h.render();props.section='highlights';h.render();
-  assert.equal(h.find(n=>n.props.accessibilityRole==='tab'&&text(n)==='Job Description').props.accessibilityState.selected,true);
+  props.section='highlights';h.render();assert.deepEqual(h.find(n=>typeof n.type==='function'&&n.type.name==='KeywordHighlights').props.resume,props.savedResume);
   props.analysis=null;props.section='overview';h.render();assert.match(h.getText(),/Not calculated/);assert.match(h.getText(),/Unavailable/);assert.doesNotMatch(h.getText(),/72\.4/);h.dispose();
 });
 
@@ -481,7 +482,7 @@ test('header Job Match opens from every panel and Back retains the panel, active
     assert.deepEqual(manager.snapshot.workspace,before);h.blur();
     const match=harness();match.open('app/cv-editor/[id]/job-match.tsx',mocks);
     const view=()=>match.find(n=>n.type==='JobMatch');
-    assert.equal(view().props.dirty,true);assert.equal(view().props.revision,6);assert.equal(view().props.jobDescription,remote.job.description);
+    assert.equal(view().props.dirty,true);assert.equal(view().props.revision,6);assert.equal(view().props.savedResume.summary,'Before','highlights use the saved document, not the pending Summary');assert.equal(view().props.jobDescription,remote.job.description);
     match.button('Keyword Highlights').props.onPress();match.render();assert.equal(view().props.section,'highlights');
     match.button('Back to Edit Resume').props.onPress();assert.deepEqual(match.calls,[['back']]);match.dispose();
     h.focus();assert.equal(h.button(label).props.accessibilityState.selected,true);
@@ -861,4 +862,26 @@ test('template and formatting controls mark each tap for timing without generati
  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({document,resume:document.resume,layout:document.layout,layoutDraft:document.layout,confirmedSkills:[],saveState:'saved',loading:false,updateLayoutDraft:next=>changes.push(next)})}});
  h.button('Templates').props.onPress();h.render();h.find(n=>n.type==='DesignLayout'&&n.props.mode==='templates').props.onChange({...document.layout,template:'deedy'});assert.equal(taps,1);
  h.button('Format').props.onPress();h.render();for(const base of [4,5,4])h.find(n=>n.type==='DesignLayout'&&n.props.mode==='format').props.onChange({...document.layout,fontSize:{...document.layout.fontSize,base}});assert.equal(taps,4);assert.equal(changes.length,4);assert.deepEqual(h.calls,[]);h.dispose();
+});
+
+
+test('Keyword Highlights presents the legend followed by the complete saved document without inner tabs or a job panel',()=>{
+  const h=harness();
+  const source={summary:'Supported TCP/IP networks.',workExperience:[{id:1,title:'Engineer',company:'Acme',description:['Maintained TCP/IP services.']}],additional:{technicalSkills:['TCP/IP']}};
+  const saved={...source,summary:'Supported TCP/IP networks. Added VLAN monitoring.',additional:{technicalSkills:['TCP/IP','VLAN','English communication (written and spoken)']},customSections:{custom_1:{sectionType:'text',text:'Complete custom paragraph.'}},sectionMeta:[{key:'summary',displayName:'Profile',order:0},{key:'workExperience',displayName:'Work history',order:1},{key:'additional',displayName:'Skills & awards',order:2},{key:'custom_1',displayName:'Community',order:3}]};
+  const props={resume:saved,keywords:['TCP/IP','VLAN'],jobDescription:'TCP/IP VLAN PRIVATE JOB DESCRIPTION',history:{original:source,changes:[],keywords:[]}};
+  h.open('components/editor/KeywordHighlights.tsx',{},'KeywordHighlights',props);
+  const content=h.getText();
+  assert.match(content,/Yellow — Matched keywords/);assert.match(content,/Blue — Keywords you added/);
+  assert.match(content,/Yellow marks keywords that were already in your resume and also appear in the job description. Blue shows where keywords were added during tailoring or editing./);
+  assert.match(content,/Complete custom paragraph/);assert.match(content,/English communication \(written and spoken\)/);
+  assert.ok(content.indexOf('Yellow —')<content.indexOf('Your resume'));assert.ok(content.indexOf('Your resume')<content.indexOf('Supported TCP/IP'));
+  assert.deepEqual(nodes(h.render()).filter(n=>n.props.accessibilityRole==='header').map(text),['Your resume','Profile','Work history','Skills & awards','Community']);
+  assert.equal(h.find(n=>n.props.accessibilityRole==='tab'||n.type==='ScrollView'),undefined,'the route owns the single scroll');
+  assert.doesNotMatch(content,/PRIVATE JOB DESCRIPTION|exact locations|Exact text locations/);
+  const spans=nodes(h.render()).filter(n=>n.type==='Text'&&/text-highlight-(matched|added)-foreground/.test(n.props.className??''));
+  assert.ok(spans.some(n=>text(n)==='TCP/IP'&&n.props.className.includes('bg-highlight-matched')));
+  assert.ok(spans.some(n=>text(n)==='VLAN'&&n.props.className.includes('bg-highlight-added')));
+  props.history=null;props.historyError=true;h.render();assert.match(h.getText(),/Only verified occurrences/);assert.match(h.getText(),/Complete custom paragraph/);
+  h.dispose();
 });
