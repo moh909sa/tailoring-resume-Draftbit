@@ -25,6 +25,7 @@ import { JobMatch } from "@/components/editor/JobMatch";
 import { addCustomSection, deleteCustomSection, duplicateCustomSection, moveSection, renameSection, replaceSection, resumeSections, withSectionMetadata, type EditorSection } from "@/components/editor/sections";
 import { isJsonObject, type JsonValue } from "@/lib/tailoring/types";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/theming/ThemeProvider";
 
 const statusLabels = {saved:"Content saved",saving:"Saving…",local:"Saved on device",error:"Retry saving",conflict:"Choose saved version"};
 const tools = [{key:"content",label:"Content",icon:"Pencil"},{key:"templates",label:"Templates",icon:"PanelsTopLeft"},{key:"format",label:"Format",icon:"SlidersHorizontal"}] as const;
@@ -32,6 +33,7 @@ const tools = [{key:"content",label:"Content",icon:"Pencil"},{key:"templates",la
 export default function CvEditorScreen() {
   const {id,returnTo} = useLocalSearchParams<{id?:string|string[];returnTo?:string}>();
   const {session}=useAuth();
+  const {theme}=useTheme();
   const editor=useCvEditor(id);
   const workspace=editor.workspace ?? emptyWorkspace();
   const setWorkspace=(patch:Partial<EditorWorkspace>)=>editor.updateWorkspace(patch);
@@ -143,9 +145,14 @@ export default function CvEditorScreen() {
       {editor.problem || actionError || pdfError ? <View className="gap-2 bg-background px-4 py-2"><Notice tone="error" message={[actionError,editor.problem,pdfError].filter(Boolean).join(" ") || "Your edits need syncing."}/>{editor.saveState !== "conflict"?<Button variant="outline" size="sm" className="min-h-11 native:min-h-[44px]" disabled={openingPreview} onPress={()=>actionError ? preview() : pdfError ? displayed.retry() : void editor.flush()}><Text>{pdfError?"Retry PDF update":actionError?"Retry preview":"Retry saving"}</Text></Button>:null}</View>:null}
       {editor.saveState === "conflict" ? <View className="gap-2 border-b border-border bg-background px-4 py-3"><Text className="text-caption text-foreground">A newer version is saved. Choose how to continue; your layout trial stays here.</Text><View className="flex-row gap-2"><Button className="min-h-11 native:min-h-[44px] flex-1" onPress={()=>void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" className="min-h-11 native:min-h-[44px] flex-1" onPress={()=>void editor.resolveConflict("server")}><Text>Use saved content</Text></Button></View></View>:null}
       <View className="flex-1 bg-background" onLayout={event=>setStageHeight(event.nativeEvent.layout.height)}>
-        <View className="flex-1 bg-muted">
+        <View testID="editor-pdf-pane" className="relative flex-1 bg-muted">
           {displayed.pdf ? <>
             <CvPreviewSurface key={`${displayed.pdf.uri}:${rendererAttempt}`} resume={editor.resume} layout={layout} pdf={displayed.pdf} error={null} editable={false} onSectionPress={openSection} onError={()=>setViewError(true)} onRetry={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}/>
+            {!displayed.ready && !pdfError && !editor.problem && !viewError ? <View testID="preview-updating-overlay" pointerEvents="none" className="absolute inset-0 z-10 items-center justify-center">
+              <View accessible accessibilityRole="progressbar" accessibilityLabel="Updating preview…" accessibilityLiveRegion="polite" className="flex-row items-center gap-2 rounded-full border border-border bg-background px-4 py-2.5 shadow-sm">
+                <ActivityIndicator size="small" color={theme.colors.primary}/><Text className="text-caption font-medium text-foreground">Updating preview…</Text>
+              </View>
+            </View>:null}
             {viewError?<View className="gap-2 border-t border-border bg-background px-4 py-2"><Text className="text-caption text-muted-foreground">The PDF viewer could not display this file.</Text><Button variant="outline" onPress={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}><Text>Retry viewer</Text></Button></View>:null}
           </>:<View className="flex-1 items-center justify-center gap-3 bg-muted px-6">{pdfError?<LucideIcon name="FileText" size={28} className="text-muted-foreground"/>:<ActivityIndicator/>}<Text className="text-center text-body text-foreground">{pdfError?"Your PDF could not be updated.":"Updating PDF…"}</Text><Text className="text-center text-caption text-muted-foreground">{pdfError?"Your edits are kept here. Use Retry PDF update above.":"The exact exported pages will appear here."}</Text></View>}
 

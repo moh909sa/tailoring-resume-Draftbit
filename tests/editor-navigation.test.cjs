@@ -349,7 +349,7 @@ test('failed automatic PDF update retains the previous file and exposes retry wi
  const h=harness();t.after(()=>h.dispose());const document=makeDocument();let retries=0;
  h.pdf={pdf:{uri:'file:///last.pdf',revision:6},ready:false,saveError:'Unable to save. Your edits are kept.',retry:()=>retries++};
  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>({document,resume:document.resume,confirmedSkills:[],saveState:'saved',loading:false})}});
- assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.pdf,h.pdf.pdf);assert.equal(h.button('Open PDF preview').props.disabled,true);h.button('Open PDF preview').props.onPress();assert.deepEqual(h.calls,[]);h.button('Retry PDF update').props.onPress();assert.equal(retries,1);
+ assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.pdf,h.pdf.pdf);assert.equal(h.find(n=>n.props.testID==='preview-updating-overlay'),undefined);assert.equal(h.button('Open PDF preview').props.disabled,true);h.button('Open PDF preview').props.onPress();assert.deepEqual(h.calls,[]);h.button('Retry PDF update').props.onPress();assert.equal(retries,1);
 });
 
 test('preview refresh failures cannot download the previous saved artifact',async(t)=>{
@@ -410,7 +410,15 @@ test('Templates retains server controls while PDF remains disabled until the dis
  const h=harness(),document=makeDocument();const editor={document,resume:document.resume,layout:document.layout,layoutDraft:document.layout,updateLayoutDraft:next=>{editor.layoutDraft=next;},confirmedSkills:[],loading:false,saveState:'saved'};
  h.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});h.button('Templates').props.onPress();h.render();const design=h.find(n=>n.type==='DesignLayout');assert.equal(design.props.options,document.layout_options);design.props.onChange({...document.layout,template:'modern'});
  h.pdf={pdf:{uri:'file:///old.pdf',revision:6},ready:false,retry:()=>{}};h.render();assert.equal(editor.layout.template,'swiss-single');assert.equal(h.button('Open PDF preview').props.disabled,true);assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.pdf.uri,'file:///old.pdf');
- editor.document={...document,revision:7};h.pdf={...h.pdf,pdf:{uri:'file:///modern.pdf',revision:7},ready:true,signature:JSON.stringify([editor.resume,editor.layoutDraft,[]])};h.render();h.button('Open PDF preview').props.onPress();await h.pump();assert.equal(h.calls.at(-1)[1].params.revision,'7');h.dispose();
+ const overlay=()=>h.find(n=>n.props.testID==='preview-updating-overlay');
+ assert.equal(overlay().props.pointerEvents,'none');assert.match(overlay().props.className,/absolute inset-0.*items-center justify-center/);
+ const pane=h.find(n=>n.props.testID==='editor-pdf-pane');assert.ok(nodes(pane).includes(overlay()));assert.equal(nodes(pane).some(n=>n.type==='EditorControlsPanel'),false,'badge is centered in the PDF pane, above the tray');
+ assert.match(text(overlay()),/Updating preview…/);assert.equal(h.pdf.updating,undefined,'out-of-date readiness shows the badge even before loading starts');
+ h.button('Format').props.onPress();h.render();
+ for(const base of [4,5,4,3]){const format=h.find(n=>n.type==='DesignLayout'&&n.props.mode==='format');format.props.onChange({...editor.layoutDraft,pageSize:'LETTER',fontSize:{...editor.layoutDraft.fontSize,base}});h.pdf={...h.pdf,saving:base===4,updating:base===5};h.render();assert.ok(overlay());assert.equal(h.find(n=>n.type==='CvPreviewSurface').props.pdf.uri,'file:///old.pdf');assert.equal(h.button('Format').props.disabled,false);}
+ h.pdf={...h.pdf,error:'PDF retrieval failed'};h.render();assert.equal(overlay(),undefined);assert.ok(h.button('Retry PDF update'));
+ h.pdf={...h.pdf,error:null,updating:true};h.render();assert.ok(overlay());
+ editor.document={...document,revision:7};h.pdf={...h.pdf,pdf:{uri:'file:///modern.pdf',revision:7},ready:true,updating:false,signature:JSON.stringify([editor.resume,editor.layoutDraft,[]])};h.render();assert.equal(overlay(),undefined);h.button('Open PDF preview').props.onPress();await h.pump();assert.equal(h.calls.at(-1)[1].params.revision,'7');h.dispose();
 });
 
 test('Add Job saves a new role through the existing revision flow without changing existing role bullets',async()=>{
