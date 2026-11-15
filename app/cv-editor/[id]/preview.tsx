@@ -1,3 +1,4 @@
+import { editorPdfArtifacts } from "@/lib/editor/pdfArtifacts";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, View } from "react-native";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -58,10 +59,17 @@ export default function CvPdfPreview() {
     const controller = new AbortController();
     let current = true;
     let artifact: EditorPdf | null = null;
+    let releaseShared:(()=>void)|null=null;
     setLoading(true);
     const timeout = setTimeout(() => controller.abort(), 120000);
     void (async () => {
       try {
+        const shared=expectedRevision!==undefined?editorPdfArtifacts.acquire(ownerId,id,expectedRevision):null;
+        if(shared){
+          artifact=shared.pdf;releaseShared=shared.release;
+          setPreview({ownerId,id,layout:shared.layout,requestedRevision:expectedRevision,title:shared.title,pdf:shared.pdf});
+          return;
+        }
         const document = await getEditorDocument(ownerId, id, controller.signal);
         if (!current) return;
         if (controller.signal.aborted) throw new Error("PDF preview canceled.");
@@ -87,7 +95,7 @@ export default function CvPdfPreview() {
       controller.abort();
       setPreview(null);
       setLoading(false);
-      void artifact?.dispose().catch(() => undefined);
+      if(releaseShared)releaseShared();else void artifact?.dispose().catch(() => undefined);
     };
   }, [ownerId, id, expectedRevision, routeError, attempt]));
 

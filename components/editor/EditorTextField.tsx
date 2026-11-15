@@ -1,3 +1,4 @@
+import { useEditorFieldActivity } from "./EditorFieldActivity";
 import { useRef } from "react";
 import { Platform, View, type TextInputProps } from "react-native";
 import { Text } from "@/components/ui/text";
@@ -19,6 +20,7 @@ type Props = {
 // The in-flow text sizes the field during layout, including its saved value.
 // The overlaid input uses the same metrics without a fixed line/height limit.
 export function EditorTextField({ label, value, onChangeText, roomy = false, keyboardType, autoCapitalize, onCaret }: Props) {
+  const activity=useEditorFieldActivity();
   const container=useRef<View>(null);
   const focused=useRef(false),selection=useRef(0);
   const lines=useRef<{text:string;y:number;height:number}[]>([]);
@@ -34,7 +36,7 @@ export function EditorTextField({ label, value, onChangeText, roomy = false, key
       <View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden className="opacity-0">
         <Text selectable={false} onTextLayout={Platform.OS === "web" ? undefined : event=>{lines.current=event.nativeEvent.lines;keepCaretVisible();}} className={cn(fieldTypography,"px-4 py-3 text-foreground",roomy ? "min-h-40" : "min-h-12")}>{value + "\u200b"}</Text>
       </View>
-      <Input accessibilityLabel={label} value={value} onChangeText={onChangeText} onFocus={()=>{focused.current=true;keepCaretVisible();}} onBlur={()=>{focused.current=false;}} onSelectionChange={event=>{selection.current=event.nativeEvent.selection.end;keepCaretVisible();}} multiline scrollEnabled={false} textAlignVertical="top" keyboardType={keyboardType} autoCapitalize={autoCapitalize}
+      <Input accessibilityLabel={label} value={value} onChangeText={onChangeText} onFocus={()=>{focused.current=true;activity(true);keepCaretVisible();}} onBlur={()=>{focused.current=false;activity(false);}} onSelectionChange={event=>{selection.current=event.nativeEvent.selection.end;keepCaretVisible();}} multiline scrollEnabled={false} textAlignVertical="top" keyboardType={keyboardType} autoCapitalize={autoCapitalize}
         className={cn(fieldTypography,"absolute inset-0 h-full min-h-0 w-full rounded-xl border-0 bg-transparent px-4 py-3 text-foreground native:h-full")} />
     </View>
   </View>;

@@ -1,7 +1,7 @@
 import type { Theme } from "@/theming/Theme";
 
 export type RichTextProps = {label:string;value:string;onChangeText:(value:string)=>void;onCaret?:(y:number)=>void};
-export type RichTextMessage = {type:"change";value:string} | {type:"height";height:number} | {type:"caret";y:number};
+export type RichTextMessage = {type:"change";value:string} | {type:"height";height:number} | {type:"caret";y:number} | {type:"activity";active:boolean};
 const json = (value: unknown) => JSON.stringify(value).replace(/</g,"\\u003c");
 
 // One editing surface on WKWebView and web. Persist only the print engine's
@@ -65,6 +65,8 @@ export function richTextDocument(value: string, label: string, theme: Theme): st
   document.getElementById('cancel-link').addEventListener('click',closeLink);
   document.getElementById('remove-link').addEventListener('click',function(){closeLink();document.execCommand('unlink',false,null);changed();});
   form.addEventListener('submit',function(e){e.preventDefault();var href=safeUrl(url.value.trim());if(!href||!display.value.trim()){error.textContent='Enter display text and a full https://, http://, mailto: or tel: URL.';height();return;}var a=document.createElement('a');a.href=href;a.target='_blank';a.rel='noopener noreferrer';if(linkRange&&linkRange.toString()===display.value){a.appendChild(linkRange.cloneContents());a.querySelectorAll('a').forEach(function(n){n.replaceWith.apply(n,Array.from(n.childNodes));});}else a.textContent=display.value;restore(linkRange);document.execCommand('unlink',false,null);document.execCommand('insertHTML',false,a.outerHTML);form.classList.remove('open');changed();});
+  document.getElementById('wrap').addEventListener('focusin',function(){send({type:'activity',active:true});});
+  document.getElementById('wrap').addEventListener('focusout',function(){setTimeout(function(){send({type:'activity',active:document.getElementById('wrap').contains(document.activeElement)});},0);});
   document.addEventListener('focusin',function(e){if(e.target.tagName==='INPUT')setTimeout(function(){send({type:'caret',y:e.target.getBoundingClientRect().bottom});},100);});
   if(window.ResizeObserver)new ResizeObserver(height).observe(wrap);height();
   })();</script></body></html>`;

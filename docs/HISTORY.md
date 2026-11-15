@@ -57,3 +57,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Saved CVs open directly in Edit Resume; local paginated pages, pinch/pan/Fit and a continuously resizable tools divider retain one shared document and revision-aware PDF export.
 
 - Templates presents all engine options in one grid with local single/sidebar layouts; explicit PDF preparation waits for refresh and serializes the layout captured at the tap.
+
+- Edit Resume uses the actual revision-pinned Railway PDF, with debounced saves after formatting or field completion and one leased artifact for inline view, preview and download.

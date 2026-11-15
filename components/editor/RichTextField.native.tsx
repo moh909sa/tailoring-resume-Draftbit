@@ -1,3 +1,4 @@
+import { useEditorFieldActivity } from "./EditorFieldActivity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { WebView } from "react-native-webview";
@@ -9,6 +10,8 @@ import { Button } from "@/components/ui/button";
 
 export function RichTextField({label,value,onChangeText,onCaret}: RichTextProps) {
   const {theme} = useTheme();
+  const activity=useEditorFieldActivity();
+  const activityRef=useRef(activity);activityRef.current=activity;
   const web = useRef<WebView>(null);
   const container = useRef<View>(null);
   const initial = useRef(value);
@@ -21,10 +24,11 @@ export function RichTextField({label,value,onChangeText,onCaret}: RichTextProps)
   return <View className="w-full min-w-0 gap-2">
     <Text className="text-caption font-medium text-muted-foreground">{label}</Text>
     <View ref={container} className="w-full bg-card" style={{height}}>
-      <WebView ref={web} source={source} originWhitelist={["*"]} scrollEnabled={false} automaticallyAdjustContentInsets={false} hideKeyboardAccessoryView keyboardDisplayRequiresUserAction={false} textZoom={100} onShouldStartLoadWithRequest={request=>request.url === "about:blank"} onLoadEnd={()=>web.current?.injectJavaScript(`window.setEditorValue && window.setEditorValue(${JSON.stringify(initial.current).replace(/</g,"\\u003c")});true;`)} onError={()=>setFailed(true)} onContentProcessDidTerminate={()=>web.current?.reload()} onMessage={event=>{
+      <WebView ref={web} source={source} originWhitelist={["*"]} scrollEnabled={false} automaticallyAdjustContentInsets={false} hideKeyboardAccessoryView keyboardDisplayRequiresUserAction={false} textZoom={100} onShouldStartLoadWithRequest={request=>request.url === "about:blank"} onLoadEnd={()=>web.current?.injectJavaScript(`window.setEditorValue && window.setEditorValue(${JSON.stringify(initial.current).replace(/</g,"\\u003c")});true;`)} onError={()=>{activityRef.current(false);setFailed(true);}} onContentProcessDidTerminate={()=>{activityRef.current(false);web.current?.reload();}} onMessage={event=>{
         try {
           const message = JSON.parse(event.nativeEvent.data) as RichTextMessage;
-          if (message.type === "change" && typeof message.value === "string") onChangeText(message.value);
+          if(message.type === "activity")activityRef.current(message.active);
+          else if (message.type === "change" && typeof message.value === "string") onChangeText(message.value);
           else if (message.type === "height" && Number.isFinite(message.height)) setHeight(Math.max(76,message.height));
           else if (message.type === "caret" && Number.isFinite(message.y)) container.current?.measureInWindow((_x,y)=>onCaret?.(y+message.y));
         } catch { /* Ignore unrelated WebView messages. */ }

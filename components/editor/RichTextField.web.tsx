@@ -1,3 +1,4 @@
+import { useEditorFieldActivity } from "./EditorFieldActivity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { Text } from "@/components/ui/text";
@@ -8,6 +9,8 @@ const frameStyle = {width:"100%",border:0,display:"block"};
 
 export function RichTextField({label,value,onChangeText}: RichTextProps) {
   const {theme} = useTheme();
+  const activity=useEditorFieldActivity();
+  const activityRef=useRef(activity);activityRef.current=activity;
   const frame = useRef<HTMLIFrameElement>(null);
   const initial = useRef(value);
   initial.current = value;
@@ -20,7 +23,8 @@ export function RichTextField({label,value,onChangeText}: RichTextProps) {
       if (event.source !== frame.current?.contentWindow || typeof event.data?.cvRichText !== "string") return;
       try {
         const message = JSON.parse(event.data.cvRichText) as RichTextMessage;
-        if (message.type === "change" && typeof message.value === "string") change.current(message.value);
+        if(message.type === "activity")activityRef.current(message.active);
+        else if (message.type === "change" && typeof message.value === "string") change.current(message.value);
         else if (message.type === "height" && Number.isFinite(message.height)) setHeight(Math.max(76,message.height));
       } catch { /* Ignore unrelated frame messages. */ }
     };

@@ -194,7 +194,7 @@ export class CvEditorSession {
   }
   saveForPdf(): Promise<EditorDocument | null> {
     if (this.exporting) return this.exporting;
-    // Capture the choice at the tap, before an in-flight read or receipt completes.
+    // Capture the selected layout before an in-flight read or receipt completes.
     const selected = this.state.layoutDraft;
     const task = this.preparePdf(selected);
     this.exporting = task;
@@ -204,7 +204,7 @@ export class CvEditorSession {
   private async preparePdf(selected: EditorLayout | null): Promise<EditorDocument | null> {
     if (this.refreshTask) await this.refreshTask;
     // First reconcile any content/receipt. An unrelated autosave always uses layout,
-    // while the canvas uses layoutDraft. Only this explicit action bridges them.
+    // while controls use layoutDraft. PDF preparation bridges them after editing pauses.
     const content = await this.flush();
     if (!content || this.disposed) return null;
     if (selected && !same(selected,content.layout ?? null)) this.update(this.state.resume!,this.state.confirmedSkills,selected);

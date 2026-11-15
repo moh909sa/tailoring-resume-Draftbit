@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppScreen } from "@/components/layout/AppScreen";
 import { Text } from "@/components/ui/text";
@@ -11,15 +11,15 @@ import LucideIcon from "@/lib/icons/LucideIcon";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useCvEditor } from "@/lib/editor/useCvEditor";
 import { emptyWorkspace, type EditorWorkspace } from "@/lib/editor/session";
-import { supportsLiveTemplate } from "@/lib/editor/documentTheme";
-import { layoutTemplateName } from "@/lib/editor/layout";
 import type { FieldTarget } from "@/lib/editor/liveDocument";
 import { SectionEditor } from "@/components/editor/SectionEditor";
 import { AddCustomSectionSheet, RenameSectionSheet, SectionActionsMenu } from "@/components/editor/SectionControls";
 import { ResumeSectionList } from "@/components/editor/ResumeSectionList";
 import { EditorControlsPanel } from "@/components/editor/EditorControlsPanel";
 import { CvPreviewSurface } from "@/components/editor/CvPreviewSurface";
-import { LiveCvRenderer } from "@/components/editor/LiveCvRenderer";
+import { useEditorPdf } from "@/lib/editor/useEditorPdf";
+import { pdfEditSignature } from "@/lib/editor/editorPdfPreview";
+import { EditorFieldActivity } from "@/components/editor/EditorFieldActivity";
 import { DesignLayout } from "@/components/editor/DesignLayout";
 import { JobMatch } from "@/components/editor/JobMatch";
 import { addCustomSection, deleteCustomSection, duplicateCustomSection, moveSection, renameSection, replaceSection, resumeSections, withSectionMetadata, type EditorSection } from "@/components/editor/sections";
@@ -40,6 +40,7 @@ export default function CvEditorScreen() {
   const sections=editor.resume ? resumeSections(editor.resume) : [];
   const section=sections.find(s=>s.key === workspace.sectionKey);
   const previewLock=useRef(false);
+  const [fieldEditing,setFieldEditing]=useState(false);
   const [showSignIn,setShowSignIn]=useState(false);
   const [menuKey,setMenuKey]=useState<string|null>(null);
   const [renameKey,setRenameKey]=useState<string|null>(null);
@@ -50,20 +51,22 @@ export default function CvEditorScreen() {
   const [viewError,setViewError]=useState(false);
   const [rendererAttempt,setRendererAttempt]=useState(0);
   const pendingSection=useRef<string|null>(null);
-  const previewGeneration=useRef(0);
-  const mounted=useRef(true);
   const contentScroll=useRef<ScrollView|null>(null);
   const listOffset=useRef(0);
   const returnOffset=useRef(0);
   const menuSection=sections.find(s=>s.key === menuKey && !s.personal);
   const insets=useSafeAreaInsets();
+  const pdfInput=session && document && editor.resume && !editor.error?{ownerId:session.user.id,id:document.tailoring_id,resume:editor.resume,layout,skills:editor.confirmedSkills,revision:document.revision,saveState:editor.saveState,editing:fieldEditing && workspace.tool === "content" && !!section}:null;
+  const displayed=useEditorPdf(pdfInput,editor.saveForPdf);
+  const pdfError=displayed.saveError ?? displayed.error;
+  useEffect(()=>{setViewError(false);},[displayed.pdf?.uri]);
+  useFocusEffect(useCallback(()=>{previewLock.current=false;setOpeningPreview(false);},[id,session?.user.id]));
   useEffect(()=>{
-    mounted.current=true;previewLock.current=false;listOffset.current=0;returnOffset.current=0;pendingSection.current=null;
-    setMenuKey(null);setRenameKey(null);setAddingSection(false);setOpeningPreview(false);setActionError(null);setViewError(false);
-    return()=>{mounted.current=false;previewGeneration.current++;};
+    previewLock.current=false;listOffset.current=0;returnOffset.current=0;pendingSection.current=null;
+    setFieldEditing(false);setMenuKey(null);setRenameKey(null);setAddingSection(false);setOpeningPreview(false);setActionError(null);setViewError(false);
   },[session?.user.id,id]);
   const leave=()=>{
-    previewGeneration.current++;Keyboard.dismiss();void editor.flush();
+    Keyboard.dismiss();void editor.flush();
     if(returnTo === "library" && router.canGoBack())router.dismissTo("/(tabs)/library/tailored-cvs");
     else if(router.canGoBack())router.back();
     else router.replace(returnTo === "tailor"?"/(tabs)/tailor":"/(tabs)/library/tailored-cvs");
@@ -75,11 +78,11 @@ export default function CvEditorScreen() {
     setWorkspace({tool:"content",trayOpen:true,panelHeight:workspace.panelHeight || 190,sectionKey:found.key,fieldPath:target?.path ?? null,fieldLabel:target?.label ?? null});
   };
   const closeSection=()=>{
-    Keyboard.dismiss();setWorkspace({sectionKey:null,fieldPath:null,fieldLabel:null});
+    Keyboard.dismiss();setFieldEditing(false);setWorkspace({sectionKey:null,fieldPath:null,fieldLabel:null});
     contentScroll.current?.scrollTo({y:returnOffset.current,animated:false});void editor.flush();
   };
   const selectTool=(tool:EditorWorkspace["tool"])=>{
-    Keyboard.dismiss();setWorkspace({tool,trayOpen:workspace.tool !== tool || !workspace.trayOpen,panelHeight:workspace.panelHeight || 190});
+    Keyboard.dismiss();setFieldEditing(false);setWorkspace({tool,trayOpen:workspace.tool !== tool || !workspace.trayOpen,panelHeight:workspace.panelHeight || 190});
   };
   const addSkill = (skill:string) => {
     if(!editor.resume || !document) return;
@@ -120,36 +123,32 @@ export default function CvEditorScreen() {
   });
   const rename = (key:string,name:string) => {if(editor.resume) editor.updateResume(renameSection(editor.resume,key,name));};
   const openCreatedSection = () => {if(pendingSection.current) {setWorkspace({tool:"content",trayOpen:true,panelHeight:workspace.panelHeight || 190,sectionKey:pendingSection.current,fieldPath:null,fieldLabel:null});pendingSection.current=null;}};
-  const preview=async()=>{
-    if(previewLock.current)return;
-    previewLock.current=true;
-    const generation=++previewGeneration.current;
-    setOpeningPreview(true);setActionError(null);Keyboard.dismiss();
-    try {
-      if(editor.resume){const complete=withSectionMetadata(editor.resume);if(complete !== editor.resume)editor.updateResume(complete);}
-      const saved=await editor.saveForPdf();
-      if(!mounted.current || generation !== previewGeneration.current)return;
-      if(saved)router.push({pathname:"/cv-editor/[id]/preview",params:{id:saved.tailoring_id,revision:String(saved.revision),returnToEditor:"1",...(returnTo === "library" || returnTo === "tailor" ? {editorReturnTo:returnTo} : {})}});
-      else setActionError("Your CV could not be saved for PDF. Your text and layout are kept here.");
-    } catch(error){if(mounted.current && generation === previewGeneration.current)setActionError(error instanceof Error ? error.message : "Your CV could not be saved for PDF. Retry saving.");}
-    finally{if(generation === previewGeneration.current){previewLock.current=false;if(mounted.current)setOpeningPreview(false);}}
+  const preview=()=>{
+    const pdf=displayed.pdf,snapshot=editor.getSnapshot?.();
+    if(previewLock.current || !displayed.ready || !pdf)return;
+    if(snapshot && (snapshot.saveState !== "saved" || snapshot.document?.revision !== pdf.revision || !snapshot.resume || pdfEditSignature(snapshot.resume,snapshot.layoutDraft ?? snapshot.layout,snapshot.confirmedSkills)!==displayed.signature))return;
+    previewLock.current=true;setOpeningPreview(true);setActionError(null);Keyboard.dismiss();
+    try{router.push({pathname:"/cv-editor/[id]/preview",params:{id:document!.tailoring_id,revision:String(pdf.revision),returnToEditor:"1",...(returnTo === "library" || returnTo === "tailor" ? {editorReturnTo:returnTo} : {})}});}
+    catch(error){previewLock.current=false;setOpeningPreview(false);setActionError(error instanceof Error?error.message:"The PDF viewer could not open. Try again.");}
   };
-  const canRender=!!layout && supportsLiveTemplate(layout.template);
-  return <AppScreen>
+  return <EditorFieldActivity onChange={setFieldEditing} resetKey={JSON.stringify([session?.user.id,id,workspace.tool,workspace.sectionKey,workspace.trayOpen])}><AppScreen>
     <View className="h-14 native:h-[56px] shrink-0 flex-row items-center gap-1 border-b border-border bg-background px-2">
       <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 native:h-[44px] native:w-[44px]" accessibilityLabel={returnTo === "preview" ? "Back to saved preview" : returnTo === "tailor" ? "Back to Tailor" : "Back to saved CVs"} disabled={openingPreview} onPress={leave}><LucideIcon name="ChevronLeft" size={22} className="text-foreground"/></Button>
-      <View className="min-w-0 flex-1"><Text accessibilityRole="header" className="text-editor-title text-foreground">Edit Resume</Text><Text accessibilityLiveRegion="polite" numberOfLines={1} className="text-caption text-muted-foreground">{!document || editor.error ? (editor.loading?"Opening saved CV…":session?"Saved CV":"Sign in to edit") : openingPreview ? "Saving for PDF…" : statusLabels[editor.saveState]}{document && !editor.error && editor.layoutDraftDirty ? " · Layout on device" : ""}</Text></View>
-      {document && editor.resume && !editor.error ? <Button variant="ghost" accessibilityLabel="Open PDF preview" disabled={openingPreview} className="min-h-11 native:min-h-[44px] min-w-16 flex-row gap-1.5 px-3" onPress={()=>void preview()}>{openingPreview?<ActivityIndicator size="small"/>:<LucideIcon name="FileText" size={17} className="text-primary"/>}<Text className="text-body font-semibold text-primary">PDF</Text></Button>:null}
+      <View className="min-w-0 flex-1"><Text accessibilityRole="header" className="text-editor-title text-foreground">Edit Resume</Text><Text accessibilityLiveRegion="polite" numberOfLines={1} className="text-caption text-muted-foreground">{!document || editor.error ? (editor.loading?"Opening saved CV…":session?"Saved CV":"Sign in to edit") : openingPreview ? "Opening PDF…" : pdfError ? "PDF needs updating" : pdfInput?.editing ? "Editing…" : !displayed.ready ? "Updating PDF…" : `Saved · PDF v${displayed.pdf?.revision}`}{document && !editor.error && editor.layoutDraftDirty ? " · Layout on device" : ""}</Text></View>
+      {document && editor.resume && !editor.error ? <Button variant="ghost" accessibilityLabel="Open PDF preview" disabled={openingPreview || !displayed.ready} className="min-h-11 native:min-h-[44px] min-w-16 flex-row gap-1.5 px-3" onPress={()=>void preview()}>{openingPreview?<ActivityIndicator size="small"/>:<LucideIcon name="FileText" size={17} className="text-primary"/>}<Text className="text-body font-semibold text-primary">PDF</Text></Button>:null}
     </View>
     {editor.loading ? <View className="flex-1 items-center justify-center gap-4 bg-background"><ActivityIndicator/><Text className="text-body text-muted-foreground">Opening your saved CV…</Text></View>
     : !document || !editor.resume || editor.error ? <View className="flex-1 justify-center gap-4 bg-background px-6"><Notice tone="error" message={editor.error ?? "This CV could not be opened."}/>{!editor.routeError?<Button onPress={()=>session && editor.accessStatus !== 401 ? void editor.reload() : setShowSignIn(true)}><Text>{session && editor.accessStatus !== 401?"Try again":"Sign in"}</Text></Button>:null}<Button variant="outline" onPress={leave}><Text>Return to Tailored CVs</Text></Button></View>
     : <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} enabled={Platform.OS !== "web"} className="flex-1 bg-background">
-      {editor.problem || actionError ? <View className="gap-2 bg-background px-4 py-2"><Notice tone="error" message={[actionError,editor.problem].filter(Boolean).join(" ") || "Your edits need syncing."}/>{editor.saveState !== "conflict"?<Button variant="outline" size="sm" className="min-h-11 native:min-h-[44px]" disabled={openingPreview} onPress={()=>actionError ? void preview() : void editor.flush()}><Text>Retry saving</Text></Button>:null}</View>:null}
+      {editor.problem || actionError || pdfError ? <View className="gap-2 bg-background px-4 py-2"><Notice tone="error" message={[actionError,editor.problem,pdfError].filter(Boolean).join(" ") || "Your edits need syncing."}/>{editor.saveState !== "conflict"?<Button variant="outline" size="sm" className="min-h-11 native:min-h-[44px]" disabled={openingPreview} onPress={()=>actionError ? preview() : pdfError ? displayed.retry() : void editor.flush()}><Text>{pdfError?"Retry PDF update":actionError?"Retry preview":"Retry saving"}</Text></Button>:null}</View>:null}
       {editor.saveState === "conflict" ? <View className="gap-2 border-b border-border bg-background px-4 py-3"><Text className="text-caption text-foreground">A newer version is saved. Choose how to continue; your layout trial stays here.</Text><View className="flex-row gap-2"><Button className="min-h-11 native:min-h-[44px] flex-1" onPress={()=>void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" className="min-h-11 native:min-h-[44px] flex-1" onPress={()=>void editor.resolveConflict("server")}><Text>Use saved content</Text></Button></View></View>:null}
       <View className="flex-1 bg-background" onLayout={event=>setStageHeight(event.nativeEvent.layout.height)}>
         <View className="flex-1 bg-muted">
-          {canRender && !viewError ? <CvPreviewSurface key={`${session?.user.id}:${document.tailoring_id}:${rendererAttempt}`} renderer={LiveCvRenderer} resume={editor.resume} layout={layout} pdf={null} error={null} editable={workspace.tool === "content" && !openingPreview} selectedKey={workspace.sectionKey} scrollOffset={workspace.documentOffset} zoom={workspace.documentZoom} panX={workspace.documentPanX} onViewportChange={view=>setWorkspace({documentOffset:view.y,documentPanX:view.x,documentZoom:view.zoom})} onScrollOffset={documentOffset=>setWorkspace({documentOffset})} onSectionPress={openSection} onError={()=>setViewError(true)} onRetry={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}/>
-          : <View className="flex-1 items-center justify-center gap-3 bg-muted px-6"><LucideIcon name="FileText" size={28} className="text-muted-foreground"/><Text className="text-center text-body text-foreground">{viewError?"The live document could not load.":layout?`${layoutTemplateName(layout.template)} is available in PDF preview.`:"Reload your CV to see its layout."}</Text><Text className="text-center text-caption text-muted-foreground">{layout?"Your saved content and template are preserved.":"Your text edits are kept on this device."}</Text>{viewError?<Button variant="outline" onPress={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}><Text>Retry live view</Text></Button>:null}<Button variant="outline" className="min-h-11 native:min-h-[44px]" disabled={openingPreview} onPress={()=>layout?void preview():void editor.reload()}><Text>{layout?"View template in PDF":"Reload layout"}</Text></Button></View>}
+          {displayed.pdf ? <>
+            <CvPreviewSurface key={`${displayed.pdf.uri}:${rendererAttempt}`} resume={editor.resume} layout={layout} pdf={displayed.pdf} error={null} editable={false} onSectionPress={openSection} onError={()=>setViewError(true)} onRetry={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}/>
+            {viewError?<View className="gap-2 border-t border-border bg-background px-4 py-2"><Text className="text-caption text-muted-foreground">The PDF viewer could not display this file.</Text><Button variant="outline" onPress={()=>{setViewError(false);setRendererAttempt(n=>n+1);}}><Text>Retry viewer</Text></Button></View>:null}
+          </>:<View className="flex-1 items-center justify-center gap-3 bg-muted px-6">{pdfError?<LucideIcon name="FileText" size={28} className="text-muted-foreground"/>:<ActivityIndicator/>}<Text className="text-center text-body text-foreground">{pdfError?"Your PDF could not be updated.":"Updating PDF…"}</Text><Text className="text-center text-caption text-muted-foreground">{pdfError?"Your edits are kept here. Use Retry PDF update above.":"The exact exported pages will appear here."}</Text></View>}
+
         </View>
         <EditorControlsPanel open={workspace.trayOpen} height={workspace.panelHeight ?? 190} availableHeight={stageHeight} onHeightChange={height=>setWorkspace({trayOpen:height>0,panelHeight:height>0?height:workspace.panelHeight || 190})} toolbar={
         <View accessibilityRole="tablist" className="flex-row items-center border-t border-border bg-background px-2">
@@ -158,7 +157,7 @@ export default function CvEditorScreen() {
         }>
           <View testID="editor-content-controls" className={cn("flex-1 bg-background",workspace.tool === "content"?"flex":"hidden")}>
             <View className={cn("flex-1 bg-background",section?"hidden":"flex")}>
-              <View className="min-h-11 native:min-h-[44px] flex-row items-center justify-between gap-2 bg-background px-4"><Text className="text-caption text-muted-foreground">Tap a pencil or choose a section</Text><Button variant="ghost" className="min-h-11 native:min-h-[44px] flex-row gap-1 px-1" onPress={()=>setWorkspace({tool:"match",trayOpen:true})}><LucideIcon name="ChartNoAxesCombined" size={15} className="text-primary"/><Text className="text-caption font-medium text-primary">Job Match</Text></Button></View>
+              <View className="min-h-11 native:min-h-[44px] flex-row items-center justify-between gap-2 bg-background px-4"><Text className="text-caption text-muted-foreground">Choose a section to edit</Text><Button variant="ghost" className="min-h-11 native:min-h-[44px] flex-row gap-1 px-1" onPress={()=>setWorkspace({tool:"match",trayOpen:true})}><LucideIcon name="ChartNoAxesCombined" size={15} className="text-primary"/><Text className="text-caption font-medium text-primary">Job Match</Text></Button></View>
               <ScrollView ref={contentScroll} className="flex-1 bg-background" contentContainerClassName="gap-3 px-4 pb-6" keyboardShouldPersistTaps="handled" scrollEventThrottle={16} onLayout={()=>contentScroll.current?.scrollTo({y:listOffset.current,animated:false})} onScroll={event=>{if(!section)listOffset.current=Math.max(0,event.nativeEvent.contentOffset.y);}}><ResumeSectionList sections={sections} onOpen={openSection} onActions={setMenuKey} onAdd={()=>setAddingSection(true)}/></ScrollView>
             </View>
             {section?<SectionEditor inline section={section} target={workspace.fieldPath?{path:workspace.fieldPath,label:workspace.fieldLabel ?? section.label}:undefined} saveLabel={statusLabels[editor.saveState]} onChange={(value:JsonValue)=>{if(editor.resume)editor.updateResume(withSectionMetadata(replaceSection(editor.resume,section.key,value)));}} onClose={closeSection} onRename={name=>rename(section.key,name)} actions={actionsFor(section)}/>:null}
@@ -183,5 +182,5 @@ export default function CvEditorScreen() {
       setAddingSection(false);
     }} onDismiss={openCreatedSection} onClose={()=>setAddingSection(false)}/>:null}
     <AccountSheet visible={showSignIn} onClose={()=>{setShowSignIn(false);void editor.reload();}}/>
-  </AppScreen>;
+  </AppScreen></EditorFieldActivity>;
 }
