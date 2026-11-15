@@ -4,7 +4,7 @@ Edit Resume displays the actual Railway-generated PDF through `CvPreviewSurface`
 
 ## Update coordination
 
-`EditorPdfPreview` debounces formatting changes by 700 ms. Focus activity from plain and rich fields pauses PDF preparation while typing; blur/Done starts the debounce. Content still autosaves through the existing serialized session. The coordinator calls `saveForPdf()` after the pause, waits for any earlier preparation, validates the returned content/layout signature, and feeds its acknowledged revision to the existing `LivePreview` loader. No scoring request is triggered.
+`EditorPdfPreview` debounces template/formatting changes by 400 ms and text field completion by 700 ms. Focus activity from plain and rich fields pauses PDF preparation while typing; blur/Done starts the debounce. Content still autosaves through the existing serialized session. The coordinator calls `saveForPdf()` after the pause, waits for any earlier preparation, validates the returned content/layout signature, and feeds its acknowledged revision to the existing `LivePreview` loader. No scoring request is triggered.
 
 Each new desired generation invalidates previous completions and cancels pending retrieval. The last successful PDF remains visible throughout saving/loading and on failure. Preview is gated by account/document key, saved state, content/layout signature and PDF revision. Save failures retain recovery drafts and conflict actions; retrieval retry targets the same acknowledged revision. Viewer retry only remounts the existing file.
 

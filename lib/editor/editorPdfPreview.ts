@@ -33,6 +33,7 @@ export class EditorPdfPreview {
     const ownerChanged=previous?.ownerId!==input?.ownerId||previous?.id!==input?.id;
     const changed=ownerChanged||this.signature!==signature||previous?.editing!==input?.editing;
     const revisionChanged=previous?.revision!==input?.revision;
+    const formattingOnly=!!previous && !!input && previous.editing===input.editing && JSON.stringify(previous.layout)!==JSON.stringify(input.layout) && JSON.stringify([previous.resume,previous.skills])===JSON.stringify([input.resume,input.skills]);
     this.input=input;this.signature=signature;
     if(!changed&&(!revisionChanged||this.saving||this.acknowledged?.revision===input?.revision))return;
     this.stop();this.saveError=null;this.saving=false;
@@ -40,7 +41,7 @@ export class EditorPdfPreview {
     this.live.update(input?{ownerId:input.ownerId,id:input.id,revision:input.revision,ready:false}:null);
     this.emit();
     if(!input||input.editing)return;
-    this.schedule(ownerChanged?0:this.deps.delay??700);
+    this.schedule(ownerChanged?0:this.deps.delay??(formattingOnly?400:700));
   }
   private schedule(delay:number){
     const generation=this.generation;

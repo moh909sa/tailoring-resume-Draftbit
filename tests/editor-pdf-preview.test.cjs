@@ -5,7 +5,7 @@ const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(check){const deadline=Date.now()+2000;while(!check()){if(Date.now()>deadline)assert.fail('timed out waiting for asynchronous PDF state');await wait(5);}}
 const input=(patch={})=>({ownerId:'owner',id:'cv',resume:{summary:'Original',personalProjects:[]},layout:{template:'deedy',pageSize:'A4',fontSize:{base:3}},skills:[],revision:1,editing:false,saveState:'saved',...patch});
 const saved=(value,revision=value.revision)=>({tailoring_id:value.id,resume:value.resume,layout:value.layout,confirmed_skills:value.skills,revision,job:{title:'Engineer'}});
-function harness(options={}){const saves=[],loads=[],disposed=[];let revision=1;const controller=new EditorPdfPreview({delay:15,onState:()=>{},save:async value=>{saves.push(value);return options.save?options.save(value):saved(value,++revision);},load:async(target,signal)=>{loads.push({target,signal});return options.load?options.load(target,signal):{uri:'file:///'+target.revision+'.pdf',revision:target.revision,dispose:async()=>disposed.push(target.revision)};}});return{controller,saves,loads,disposed};}
+function harness(options={}){const saves=[],loads=[],disposed=[];let revision=1;const controller=new EditorPdfPreview({delay:Object.hasOwn(options,"delay")?options.delay:15,onState:()=>{},save:async value=>{saves.push(value);return options.save?options.save(value):saved(value,++revision);},load:async(target,signal)=>{loads.push({target,signal});return options.load?options.load(target,signal):{uri:'file:///'+target.revision+'.pdf',revision:target.revision,dispose:async()=>disposed.push(target.revision)};}});return{controller,saves,loads,disposed};}
 async function seed(h){let value=input();h.controller.update(value);await until(()=>h.controller.snapshot.pdf);value={...value,revision:h.controller.snapshot.pdf.revision};h.controller.update(value);return value;}
 
 test('format taps coalesce, retain the last actual PDF, and gate preview until the acknowledged file arrives',async(t)=>{
@@ -35,4 +35,13 @@ test('save conflict keeps the old PDF and selected layout; explicit recovery ret
 
 test('the full-screen handoff leases the identical owner-scoped file through replacement and disposal',async(t)=>{
  const h=harness(),registry=new PdfArtifacts();t.after(()=>h.controller.dispose());const value=await seed(h),pdf=h.controller.snapshot.pdf;const unpublish=registry.publish('owner','cv',{pdf,title:'Engineer',layout:value.layout,retain:()=>h.controller.retain(pdf)});assert.equal(registry.acquire('other','cv',pdf.revision),null);const fullscreen=registry.acquire('owner','cv',pdf.revision);assert.equal(fullscreen.pdf,pdf);unpublish();h.controller.update({...value,layout:{template:'swiss-two-column'}});await wait(35);h.controller.releaseRetired();assert.deepEqual(h.disposed,[]);h.controller.dispose();assert.deepEqual(h.disposed,[3]);fullscreen.release();assert.deepEqual(h.disposed,[3,2]);assert.equal(registry.acquire('owner','cv',2),null);
+});
+
+
+test('formatting uses 400 ms after the final tap while typing and text completion retain their existing delay',async(t)=>{
+ const h=harness({delay:undefined});t.after(()=>h.controller.dispose());let value=await seed(h);const old=h.controller.snapshot.pdf;
+ value={...value,layout:{...value.layout,template:'swiss-two-column'}};h.controller.update(value);await wait(250);assert.equal(h.saves.length,1);
+ for(const base of [4,5,4]){value={...value,layout:{...value.layout,fontSize:{base},pageSize:'LETTER'}};h.controller.update(value);assert.equal(h.controller.snapshot.pdf,old);assert.equal(h.controller.snapshot.updating,true);assert.equal(h.controller.matches(value),false);}
+ await wait(250);assert.equal(h.saves.length,1,'each tap restarts the formatting debounce');await wait(250);assert.equal(h.saves.length,2,'final formatting starts preview preparation after 400 ms rather than 700 ms');await until(()=>h.loads.length===2 && !h.controller.snapshot.updating);assert.equal(h.saves.at(-1).layout.fontSize.base,4);value={...value,revision:3};h.controller.update(value);assert.equal(h.controller.matches(value),true);
+ value={...value,editing:true,resume:{...value.resume,summary:'Typed latest summary'}};h.controller.update(value);await wait(750);assert.equal(h.saves.length,2,'typing remains paused');value={...value,editing:false};h.controller.update(value);await wait(500);assert.equal(h.saves.length,2,'text completion retains 700 ms');await until(()=>h.saves.length===3);assert.equal(h.saves.at(-1).resume.summary,'Typed latest summary');
 });
