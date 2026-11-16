@@ -306,6 +306,37 @@ test('native styling reproducer identifies the exact misleading navigation excep
   assert.throws(()=>render('flex-1 bg-card'),error=>/Couldn.t find a navigation context/.test(error.message)&&/printUpgradeWarning/.test(error.stack));
 });
 
+test('first Job Match results do not upgrade reused native views after calculating',async(t)=>{
+  const h=harness();t.after(()=>h.dispose());
+  const props={analysis:null,revision:6,dirty:false,loading:true,jobDescription:'TCP/IP',savedResume:{summary:'TCP/IP'},onRefresh:()=>{},onEdit:()=>{}};
+  h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
+  let mounted=new Map();
+  const paint=async()=>{
+    const next=new Map();
+    const visit=async(node,position)=>{
+      if(!node || typeof node!=='object')return;
+      if(Array.isArray(node)){for(let i=0;i<node.length;i++)await visit(node[i],position+'/'+(node[i]?.key??i));return;}
+      // Preserve React's child slots (including nulls) and component types:
+      // a status View must never be reused as a newly themed progress bar.
+      const identity=position+'/'+String(node.type);
+      if(node.type==='View'){
+        const render=mounted.get(identity)??await nativeTransition();
+        render(node.props.className??'');next.set(identity,render);
+      }
+      await visit(node.props?.children,identity+'/children');
+    };
+    await visit(h.render(),'root');mounted=next;
+  };
+  await paint();assert.match(h.getText(),/Calculating match…/);
+  props.analysis={status:'current',revision:6,score:{overall_score:75,sub_scores:{keyword_match:75},recommendations:[]},matched_keywords:['TCP/IP'],matched_count:1,total_keywords:1};
+  props.loading=false;
+  await paint();assert.match(h.getText(),/Up to date/);assert.ok(h.find(n=>n.props.accessibilityRole==='progressbar'));
+  props.loading=true;await paint();assert.match(h.getText(),/Updating match…/);
+  props.loading=false;props.error='Network failed';await paint();assert.ok(h.button('Retry Update Match'));
+  props.error=null;props.section='highlights';await paint();
+  props.section='overview';await paint();assert.match(h.getText(),/Up to date/);
+});
+
 test('editor control panes switch repeatedly through native style resolution without replacing edits',async()=>{
  const h=harness(),document=makeDocument();let updates=0;
  const editor={document,resume:document.resume,confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:null,analysisLoading:false,refreshAnalysis:()=>{updates++;},flush:async()=>document};
@@ -973,6 +1004,11 @@ test('Job Match automatically scores each saved revision once per visit and shar
   editor.analysis=analysis;pending[0].resolve();await h.pump();
   for(const tab of ['Overview','Keyword Highlights','Overview']){h.button(tab).props.onPress();h.render();assert.equal(h.find(n=>n.type==='JobMatch').props.analysis,analysis);assert.equal(h.find(n=>n.type==='JobMatch').props.loading,false);}
   assert.equal(pending.length,1);
+  const reopened=harness();t.after(()=>reopened.dispose());
+  reopened.open('app/cv-editor/[id]/job-match.tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});await reopened.pump();
+  assert.equal(pending.length,1,'reopening a current saved result does not calculate again');
+  assert.equal(reopened.find(n=>n.type==='JobMatch').props.analysis,analysis);
+  assert.equal(reopened.find(n=>n.type==='JobMatch').props.loading,false);
   editor.document={...doc,revision:7};editor.analysis={...analysis,status:'stale'};h.render();await h.pump();assert.deepEqual(pending.map(p=>p.revision),[6,7]);
   editor.analysisError='Network failed';pending[1].resolve();await h.pump();h.render();await h.pump();assert.equal(pending.length,2,'failure does not automatically loop');
   h.find(n=>n.type==='JobMatch').props.onRefresh();h.find(n=>n.type==='JobMatch').props.onRefresh();await h.pump();assert.equal(pending.length,3,'explicit retry is serialized');

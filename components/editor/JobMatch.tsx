@@ -53,6 +53,7 @@ export function JobMatch({ section = "overview", analysis, revision, dirty, load
   const [showHelp, setShowHelp] = useState(false);
   const current = !dirty && analysis?.status === "current" && analysis.revision === revision;
   const score = analysis?.score;
+  const showBreakdown = !!score || (!loading && !error);
   const overall = score?.overall_score ?? null;
   const subScores = score?.sub_scores ?? {};
   const required = new Set(analysis?.required_skills?.map(skill => skill.toLocaleLowerCase()));
@@ -77,24 +78,25 @@ export function JobMatch({ section = "overview", analysis, revision, dirty, load
   return <View className="gap-3">
     {section === "overview" ? <>
       <View className="gap-5 rounded border border-foreground/25 bg-card p-4">
-        {!score && (loading || !!error) ? <View className="gap-3"><Text accessibilityRole="header" className="text-h5 text-foreground">ATS Score Breakdown</Text>{resultStatus}</View> : <View className="gap-3">
+        {/* Keep child slots stable: the loading status must not become the themed score bar. */}
+        <View className="gap-3">
           <View className="flex-row items-center justify-between gap-2">
             <Text accessibilityRole="header" className="min-w-0 flex-1 text-h5 leading-6 text-foreground">ATS Score Breakdown</Text>
-            <View className="shrink-0 flex-row items-baseline gap-1" accessibilityLabel={overall === null ? "Overall score unavailable" : "Overall score " + overall + " out of 100"}>
+            {showBreakdown ? <View className="shrink-0 flex-row items-baseline gap-1" accessibilityLabel={overall === null ? "Overall score unavailable" : "Overall score " + overall + " out of 100"}>
               <Text className={"text-h3 " + tone(overall).text}>{overall === null ? "Unavailable" : overall}</Text>{overall !== null ? <Text className="text-caption text-muted-foreground">/ 100</Text> : null}
-            </View>
+            </View> : null}
           </View>
-          {bar("Overall score", overall)}
+          {showBreakdown ? bar("Overall score", overall) : null}
           {resultStatus}
-          <View className="gap-4 pt-1">{metrics.map(metric => {
+          {showBreakdown ? <View className="gap-4 pt-1">{metrics.map(metric => {
             const key = metric.keys.find(key => key in subScores);
             const value = key ? subScores[key] ?? null : null;
             return <View key={metric.label} className="gap-1.5">
               <View className="flex-row items-center justify-between gap-3"><Text className="min-w-0 flex-1 text-caption leading-5 text-foreground">{metric.label}</Text><Text className={"shrink-0 text-caption font-semibold " + tone(value).text}>{value === null ? "Unavailable" : value + "%"}</Text></View>
               {bar(metric.label, value)}
             </View>;
-          })}</View>
-        </View>}
+          })}</View> : null}
+        </View>
         {score || (!loading && !error) ? <><View className="gap-2.5">
           <Text accessibilityRole="header" className="text-h6 text-foreground">Missing Keywords</Text>
           {missing.length > 0 ? <View className="flex-row flex-wrap items-start gap-1.5">{missing.map(skill => <View key={skill} testID="missing-keyword-chip" className="max-w-full shrink rounded-sm border border-score-low/75 bg-score-low/5 px-2 py-1"><Text selectable accessibilityLabel={required.has(skill.toLocaleLowerCase()) ? skill + ". Required in job." : skill} className="shrink text-caption leading-5 text-score-low web:break-words">{skill}</Text></View>)}</View> : <Text className="text-body leading-6 text-muted-foreground">{score ? "No missing keywords were reported." : "No keyword results yet."}</Text>}
