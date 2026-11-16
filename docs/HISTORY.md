@@ -73,3 +73,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Job Match missing keywords are informational only; skill edits use Edit Resume while tailoring confirmations remain unchanged.
 
 - Keyword Highlights retains account/document history across tabs and uses a compact legend with failure-only retry.
+
+- Job Match automatically analyzes missing or stale saved revisions once per visit, sharing the result across tabs and preserving prior scores during refresh.

@@ -64,10 +64,20 @@ export function JobMatch({ section = "overview", analysis, revision, dirty, load
   </View>;
   const bullets = (items: string[]) => <View className="gap-2">{items.map((item, index) => <View key={index + "-" + item} className="flex-row items-start gap-2"><Text className="text-body leading-6 text-foreground">•</Text><Text className="min-w-0 flex-1 text-body leading-6 text-foreground">{item}</Text></View>)}</View>;
 
+  const resultStatus = <View testID="match-results-status" className="gap-2">
+            <View className="flex-row flex-wrap items-center justify-between gap-2">
+              <Text accessibilityLiveRegion="polite" className={"min-w-0 shrink text-caption leading-5 " + (current ? "text-success" : "text-muted-foreground")}>{loading ? score ? "Updating match…" : "Calculating match…" : score ? current ? "Up to date" : "Results out of date" : analysis?.status === "unavailable" ? "Unavailable" : "Not calculated"}</Text>
+              {!current || loading || error ? <Button disabled={loading} onPress={onRefresh} variant="outline" size="sm" accessibilityLabel={error ? "Retry Update Match" : "Update Match"} className="min-h-11 native:min-h-[44px] shrink-0 px-3">{loading ? <ActivityIndicator accessibilityLabel="Updating job match" /> : null}<Text className="text-caption">{loading ? "Updating…" : error ? "Retry" : "Update Match"}</Text></Button> : null}
+            </View>
+            {score && analysis ? <Text className="text-caption text-muted-foreground">{analysis.matched_count} of {analysis.total_keywords} keywords matched</Text> : null}
+            {!score && !loading && !error && analysis?.status === "unavailable" ? <Text className="text-caption leading-5 text-muted-foreground">{analysis.reason || "Job-match analysis is unavailable for this CV."}</Text> : null}
+            {error && !loading ? <Text accessibilityRole="alert" className="text-caption leading-5 text-destructive">Couldn’t update your match. Try again.</Text> : null}
+          </View>;
+
   return <View className="gap-3">
     {section === "overview" ? <>
       <View className="gap-5 rounded border border-foreground/25 bg-card p-4">
-        <View className="gap-3">
+        {!score && (loading || !!error) ? <View className="gap-3"><Text accessibilityRole="header" className="text-h5 text-foreground">ATS Score Breakdown</Text>{resultStatus}</View> : <View className="gap-3">
           <View className="flex-row items-center justify-between gap-2">
             <Text accessibilityRole="header" className="min-w-0 flex-1 text-h5 leading-6 text-foreground">ATS Score Breakdown</Text>
             <View className="shrink-0 flex-row items-baseline gap-1" accessibilityLabel={overall === null ? "Overall score unavailable" : "Overall score " + overall + " out of 100"}>
@@ -75,15 +85,7 @@ export function JobMatch({ section = "overview", analysis, revision, dirty, load
             </View>
           </View>
           {bar("Overall score", overall)}
-          <View testID="match-results-status" className="gap-2">
-            <View className="flex-row flex-wrap items-center justify-between gap-2">
-              <Text accessibilityLiveRegion="polite" className={"min-w-0 shrink text-caption leading-5 " + (current ? "text-success" : "text-muted-foreground")}>{score ? current ? "Up to date" : "Results out of date" : analysis?.status === "unavailable" ? "Unavailable" : "Not calculated"}</Text>
-              {!current || loading || error ? <Button disabled={loading} onPress={onRefresh} variant="outline" size="sm" accessibilityLabel={error ? "Retry Update Match" : "Update Match"} className="min-h-11 native:min-h-[44px] shrink-0 px-3">{loading ? <ActivityIndicator accessibilityLabel="Updating job match" /> : null}<Text className="text-caption">{loading ? "Updating…" : error ? "Retry" : "Update Match"}</Text></Button> : null}
-            </View>
-            {score && analysis ? <Text className="text-caption text-muted-foreground">{analysis.matched_count} of {analysis.total_keywords} keywords matched</Text> : null}
-            {!score && analysis?.status === "unavailable" ? <Text className="text-caption leading-5 text-muted-foreground">{analysis.reason || "Job-match analysis is unavailable for this CV."}</Text> : null}
-            {error ? <Text accessibilityRole="alert" className="text-caption leading-5 text-destructive">{error}</Text> : null}
-          </View>
+          {resultStatus}
           <View className="gap-4 pt-1">{metrics.map(metric => {
             const key = metric.keys.find(key => key in subScores);
             const value = key ? subScores[key] ?? null : null;
@@ -92,21 +94,22 @@ export function JobMatch({ section = "overview", analysis, revision, dirty, load
               {bar(metric.label, value)}
             </View>;
           })}</View>
-        </View>
-        <View className="gap-2.5">
+        </View>}
+        {score || (!loading && !error) ? <><View className="gap-2.5">
           <Text accessibilityRole="header" className="text-h6 text-foreground">Missing Keywords</Text>
           {missing.length > 0 ? <View className="flex-row flex-wrap items-start gap-1.5">{missing.map(skill => <View key={skill} testID="missing-keyword-chip" className="max-w-full shrink rounded-sm border border-score-low/75 bg-score-low/5 px-2 py-1"><Text selectable accessibilityLabel={required.has(skill.toLocaleLowerCase()) ? skill + ". Required in job." : skill} className="shrink text-caption leading-5 text-score-low web:break-words">{skill}</Text></View>)}</View> : <Text className="text-body leading-6 text-muted-foreground">{score ? "No missing keywords were reported." : "No keyword results yet."}</Text>}
         </View>
         <View className="gap-2.5">
           <Text accessibilityRole="header" className="text-h6 text-foreground">Recommendations</Text>
           {recommendations.length > 0 ? <View className="gap-3">{recommendations.map(item => <View key={item.text} className="gap-1"><View className="flex-row items-start gap-2"><Text className="text-body leading-6 text-foreground">•</Text><Text className="min-w-0 flex-1 text-body leading-6 text-foreground">{item.text}</Text></View>{item.headline && profileKey ? <Button variant="ghost" size="sm" className="min-h-11 native:min-h-[44px] self-start px-0" onPress={() => onEdit(profileKey)}><Text className="text-caption text-primary">Edit headline</Text></Button> : null}</View>)}</View> : <Text className="text-body leading-6 text-muted-foreground">{score ? "No additional suggestions." : "No recommendations yet."}</Text>}
-        </View>
+        </View></> : null}
       </View>
       <View className="overflow-hidden rounded border border-border bg-card">
         <Pressable accessibilityRole="button" accessibilityLabel="About Job Match" accessibilityState={{ expanded: showHelp }} onPress={() => setShowHelp(value => !value)} className="min-h-12 flex-row items-center gap-2 bg-card px-4 py-3"><Text className="flex-1 text-h6 text-foreground">About Job Match</Text><LucideIcon name={showHelp ? "ChevronUp" : "ChevronDown"} size={17} className="text-muted-foreground" /></Pressable>
         {showHelp ? <View className="gap-4 border-t border-border px-4 py-4"><Text className="text-body leading-6 text-foreground">Job Match compares your resume with the job description to show where your skills and experience align. Scores are estimates and don’t predict an employer’s decision.</Text>{bullets(tips)}</View> : null}
       </View>
     </> : null}
+    {section === "highlights" && (loading || !!error) ? resultStatus : null}
     {section === "highlights" ? savedResume ? <KeywordHighlights resume={savedResume} keywords={[...(analysis?.matched_keywords ?? []), ...(analysis?.missing_keywords ?? []), ...(analysis?.required_skills ?? []), ...(analysis?.preferred_skills ?? [])]} jobDescription={jobDescription} history={history} historyLoading={historyLoading} historyError={historyError} onRetry={onRetryHistory} /> : <Text className="text-body leading-6 text-muted-foreground">The saved resume could not be loaded. Return to Edit Resume and try again.</Text> : null}
   </View>;
 }

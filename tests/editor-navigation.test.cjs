@@ -448,7 +448,7 @@ test('Overview keeps stale, loading and retry in the score area and clears stale
   assert.match(text(status()),/Results out of date/);assert.match(text(status()),/Update Match/);assert.match(h.getText(),/67\.3/);
   h.button('Update Match').props.onPress();assert.equal(calls,1);
   props.loading=true;h.render();assert.match(text(status()),/Updating…/);assert.equal(h.button('Update Match').props.disabled,true);
-  props.loading=false;props.error='Analysis could not be updated.';h.render();assert.match(text(status()),/Analysis could not/);h.button('Retry Update Match').props.onPress();assert.equal(calls,2);
+  props.loading=false;props.error='Analysis could not be updated.';h.render();assert.match(text(status()),/Couldn’t update your match/);h.button('Retry Update Match').props.onPress();assert.equal(calls,2);
   props.error=null;props.analysis={...props.analysis,revision:3};h.render();assert.match(text(status()),/Up to date/);assert.doesNotMatch(h.getText(),/Results out of date|version/i);assert.equal(h.find(n=>n.props.accessibilityLabel==='Update Match'),undefined);
   props.analysis=null;h.render();assert.match(text(status()),/Not calculated/);assert.ok(h.button('Update Match'));h.dispose();
 });
@@ -569,7 +569,7 @@ test('dedicated Job Match retains refresh and contextual navigation without a sk
     assert.equal(h.find(n=>n.type==='JobMatch').props.history,history);
   }
   let view=h.find(n=>n.type==='JobMatch');assert.equal(view.props.analysis,editor.analysis);assert.equal(view.props.loading,true);assert.equal(view.props.revision,6);
-  view.props.onRefresh();assert.equal(refreshed,1);
+  editor.analysisLoading=false;h.render();h.find(n=>n.type==='JobMatch').props.onRefresh();assert.equal(refreshed,1);
   assert.equal(view.props.onAddSkill,undefined);assert.equal(updates.length,0);
   h.find(n=>n.type==='JobMatch').props.onEdit('workExperience');assert.deepEqual(h.calls,[['back']]);assert.equal(editor.workspace.tool,'content');assert.equal(editor.workspace.sectionKey,'workExperience');assert.equal(editor.workspace.panelHeight,250);
   const e=harness();t.after(()=>e.dispose());e.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});assert.equal(e.find(n=>n.type==='SectionEditor').props.section.key,'workExperience');
@@ -955,4 +955,36 @@ test('missing keywords can be reviewed, manually added in Edit Resume, saved, th
   match.render();assert.equal(match.find(n=>n.type==='JobMatch').props.revision,remote.revision);
   match.find(n=>n.type==='JobMatch').props.onRefresh();await match.pump();
   assert.equal(analyzedRevision,remote.revision);assert.equal(manager.snapshot.analysis.status,'current');assert.deepEqual(manager.snapshot.analysis.missing_keywords,[]);assert.deepEqual(manager.snapshot.confirmedSkills,['Existing skill']);
+});
+
+
+test('Job Match automatically scores each saved revision once per visit and shares analysis across tabs',async(t)=>{
+  const h=harness();t.after(()=>h.dispose());const doc=makeDocument(),pending=[];
+  const editor={document:null,resume:null,loading:true,saveState:'saved',workspace:{matchSection:'overview'},analysis:null,analysisLoading:false,analysisError:null,
+    updateWorkspace:patch=>{editor.workspace={...editor.workspace,...patch};},
+    refreshAnalysis:()=>new Promise(resolve=>pending.push({revision:editor.document.revision,resolve}))};
+  h.open('app/cv-editor/[id]/job-match.tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+  await h.pump();assert.equal(pending.length,0,'waits for the saved document');
+  editor.document=doc;editor.resume=doc.resume;editor.loading=false;editor.saveState='saving';h.render();await h.pump();assert.equal(pending.length,0,'waits for content autosaves');
+  editor.saveState='saved';h.render();await h.pump();assert.deepEqual(pending.map(p=>p.revision),[6]);
+  for(let i=0;i<6;i++){h.button(i%2?'Overview':'Keyword Highlights').props.onPress();h.render();}
+  assert.equal(pending.length,1);assert.equal(h.find(n=>n.type==='JobMatch').props.loading,true);
+  const analysis={status:'current',revision:6,score:{overall_score:75,sub_scores:{},recommendations:[]},matched_keywords:['TCP/IP']};
+  editor.analysis=analysis;pending[0].resolve();await h.pump();
+  for(const tab of ['Overview','Keyword Highlights','Overview']){h.button(tab).props.onPress();h.render();assert.equal(h.find(n=>n.type==='JobMatch').props.analysis,analysis);assert.equal(h.find(n=>n.type==='JobMatch').props.loading,false);}
+  assert.equal(pending.length,1);
+  editor.document={...doc,revision:7};editor.analysis={...analysis,status:'stale'};h.render();await h.pump();assert.deepEqual(pending.map(p=>p.revision),[6,7]);
+  editor.analysisError='Network failed';pending[1].resolve();await h.pump();h.render();await h.pump();assert.equal(pending.length,2,'failure does not automatically loop');
+  h.find(n=>n.type==='JobMatch').props.onRefresh();h.find(n=>n.type==='JobMatch').props.onRefresh();await h.pump();assert.equal(pending.length,3,'explicit retry is serialized');
+  editor.analysis={...analysis,revision:7};editor.analysisError=null;pending[2].resolve();await h.pump();assert.equal(h.find(n=>n.type==='JobMatch').props.analysis.revision,7);assert.equal(pending.length,3);
+  const next=harness();t.after(()=>next.dispose());editor.analysis={...analysis,status:'stale',revision:6};next.open('app/cv-editor/[id]/job-match.tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});await next.pump();assert.equal(pending.length,4,'a new visit can try the stale revision again');pending[3].resolve();await next.pump();
+});
+
+test('first scoring replaces empty breakdown and stale scoring retains bars with retry on either tab',()=>{
+ const h=harness();const props={analysis:null,revision:6,dirty:false,loading:true,jobDescription:'TCP/IP',savedResume:{summary:'TCP/IP'},onRefresh:()=>{},onEdit:()=>{}};
+ h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
+ assert.match(h.getText(),/Calculating match…/);assert.doesNotMatch(h.getText(),/Unavailable|Not calculated|No keyword results|No recommendations/);assert.equal(h.find(n=>n.props.accessibilityRole==='progressbar'),undefined);
+ props.analysis={status:'stale',revision:5,score:{overall_score:75,sub_scores:{keyword_match:75},recommendations:[]},matched_keywords:['TCP/IP'],matched_count:1,total_keywords:1};h.render();assert.match(h.getText(),/Updating match…/);assert.match(h.getText(),/75/);assert.ok(h.find(n=>n.props.accessibilityRole==='progressbar'));
+ props.section='highlights';h.render();assert.match(h.getText(),/Updating match…/);assert.equal(h.find(n=>typeof n.type==='function'&&n.type.name==='KeywordHighlights').props.keywords[0],'TCP/IP');
+ props.loading=false;props.error='private raw error';h.render();assert.match(h.getText(),/Couldn’t update your match/);assert.ok(h.button('Retry Update Match'));assert.doesNotMatch(h.getText(),/private raw error/);h.dispose();
 });

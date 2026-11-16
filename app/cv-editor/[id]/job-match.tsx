@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, Pressable, ScrollView, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,11 +27,30 @@ export default function JobMatchScreen() {
   const sections = editor.resume ? resumeSections(editor.resume) : [];
   const [showSignIn, setShowSignIn] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const refreshMatch = async () => {
+  const [refreshError, setRefreshError] = useState(false);
+  const attempted = useRef(new Set<string>());
+  const request = useRef<symbol | null>(null);
+  const revisionKey = JSON.stringify([session?.user.id, document?.tailoring_id, document?.revision]);
+  const needsAnalysis = !editor.analysis?.score || editor.analysis.status !== "current" || editor.analysis.revision !== document?.revision;
+  // Wait for autosaves rather than asking scoring to flush in-progress editor text.
+  const ready = !!session?.user.id && !!document && !editor.loading && !editor.error && editor.saveState === "saved";
+  const refreshMatch = useCallback(async () => {
+    if (request.current || editor.analysisLoading) return;
+    const token = Symbol();
+    request.current = token;
+    attempted.current.add(revisionKey);
     setRefreshing(true);
+    setRefreshError(false);
     try { await editor.refreshAnalysis(); }
-    finally { setRefreshing(false); }
-  };
+    catch { setRefreshError(true); }
+    finally { if (request.current === token) { request.current = null; setRefreshing(false); } }
+  }, [editor.analysisLoading, editor.refreshAnalysis, revisionKey]);
+  const autoPending = ready && needsAnalysis && !attempted.current.has(revisionKey);
+  useEffect(() => {
+    if (!ready || request.current) return;
+    if (editor.analysisLoading) { attempted.current.add(revisionKey); return; }
+    if (needsAnalysis && !attempted.current.has(revisionKey)) void refreshMatch();
+  }, [ready, needsAnalysis, revisionKey, editor.analysisLoading, refreshMatch, refreshing]);
   const back = () => {
     Keyboard.dismiss();
     if (router.canGoBack()) router.back();
@@ -62,7 +81,7 @@ export default function JobMatchScreen() {
           {([["overview", "Overview"], ["highlights", "Keyword Highlights"]] as const).map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: workspace.matchSection === key }} onPress={() => editor.updateWorkspace({ matchSection: key })} className={cn("min-h-11 native:min-h-[44px] flex-1 items-center justify-center border-b-2 bg-background px-1", workspace.matchSection === key ? "border-primary" : "border-transparent")}><Text className={cn("text-caption", workspace.matchSection === key ? "text-primary" : "text-muted-foreground")}>{label}</Text></Pressable>)}
         </View>
         <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 pt-3" contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) }} keyboardShouldPersistTaps="handled">
-          <JobMatch error={editor.analysisError} savedResume={document.resume} history={keywordHistory.history} historyLoading={keywordHistory.historyLoading} historyError={keywordHistory.historyError} onRetryHistory={keywordHistory.retryHistory} template={editor.layoutDraft?.template ?? editor.layout?.template ?? document.layout?.template} section={workspace.matchSection} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={refreshing || editor.analysisLoading} jobDescription={document.job.description} onRefresh={() => void refreshMatch()} onEdit={openSection} />
+          <JobMatch error={refreshError ? "Couldn’t update your match. Try again." : editor.analysisError} savedResume={document.resume} history={keywordHistory.history} historyLoading={keywordHistory.historyLoading} historyError={keywordHistory.historyError} onRetryHistory={keywordHistory.retryHistory} template={editor.layoutDraft?.template ?? editor.layout?.template ?? document.layout?.template} section={workspace.matchSection} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={autoPending || refreshing || editor.analysisLoading} jobDescription={document.job.description} onRefresh={() => void refreshMatch()} onEdit={openSection} />
         </ScrollView>
       </View>}
     <AccountSheet visible={showSignIn} onClose={() => { setShowSignIn(false); void editor.reload(); }} />
