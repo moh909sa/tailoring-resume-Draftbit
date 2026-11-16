@@ -67,3 +67,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Job Match Overview groups real scores, template-aware ATS guidance, missing-keyword chips and recommendations in one breakdown card, followed by About JD Match and Tips; highlight guidance stays in Keyword Highlights.
 
 - Keyword Highlights renders the saved resume in one scroll with per-occurrence yellow matches and verified blue additions, using owned original text or exact tracked comparisons and leaving ambiguous history plain.
+
+- Job Match Overview keeps refresh/status beside the score, limits recommendations, collapses help, and places two-column ATS guidance in Templates.

@@ -30,8 +30,9 @@ export type EditorState = {
   problem: string | null;
   analysis: EditorAnalysis | null;
   analysisLoading: boolean;
+  analysisError: string | null;
 };
-export const emptyEditorState = (): EditorState => ({document: null, resume: null, layout: null, layoutDraft: null, layoutDraftDirty: false, workspace: emptyWorkspace(), confirmedSkills: [], loading: true, error: null, accessStatus: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false});
+export const emptyEditorState = (): EditorState => ({document: null, resume: null, layout: null, layoutDraft: null, layoutDraftDirty: false, workspace: emptyWorkspace(), confirmedSkills: [], loading: true, error: null, accessStatus: null, saveState: "saved", problem: null, analysis: null, analysisLoading: false, analysisError: null});
 type Backup = {version: 1; document: EditorDocument; resume: JsonObject; layout?: EditorLayout | null; confirmedSkills: string[]; pending: EditorSave | null; dirty: boolean; layoutDraft?: EditorLayout | null; layoutDraftDirty?: boolean; workspace?: Omit<EditorWorkspace,"tool"> & {tool:EditorWorkspace["tool"] | "match"}};
 type Dependencies = {
   read: () => Promise<string | null>;
@@ -92,7 +93,7 @@ export class CvEditorSession {
   private accept(doc: EditorDocument, keepDraft: boolean) {
     const analysis = keepDraft && doc.analysis ? {...doc.analysis, status: doc.analysis.score ? "stale" as const : "unavailable" as const} : doc.analysis;
     const keepLayoutDraft=this.state.layoutDraftDirty && !same(this.state.layoutDraft,doc.layout ?? null);
-    this.change({...(keepLayoutDraft ? {} : {layoutDraft:doc.layout ?? null,layoutDraftDirty:false}), document: doc, ...(keepDraft ? {} : {resume: doc.resume, confirmedSkills: doc.confirmed_skills}), ...(!keepDraft || this.state.layout === null ? {layout:doc.layout ?? null} : {}), analysis, loading: false, error: null, accessStatus: null});
+    this.change({...(keepLayoutDraft ? {} : {layoutDraft:doc.layout ?? null,layoutDraftDirty:false}), document: doc, ...(keepDraft ? {} : {resume: doc.resume, confirmedSkills: doc.confirmed_skills}), ...(!keepDraft || this.state.layout === null ? {layout:doc.layout ?? null} : {}), analysis, analysisError:null, loading: false, error: null, accessStatus: null});
   }
   async restore() {
     try {
@@ -221,7 +222,7 @@ export class CvEditorSession {
     this.firstEdit ??= Date.now();
     this.retries = 0;
     this.analyzing?.abort();
-    this.change({resume,layout,confirmedSkills:skills, saveState:this.state.saveState === "conflict" ? "conflict" : "saving", problem:this.state.saveState === "conflict" ? this.state.problem : null, analysisLoading:false, analysis:this.state.analysis ? {...this.state.analysis,status:this.state.analysis.score ? "stale":"unavailable"} : null});
+    this.change({resume,layout,confirmedSkills:skills, saveState:this.state.saveState === "conflict" ? "conflict" : "saving", problem:this.state.saveState === "conflict" ? this.state.problem : null, analysisLoading:false, analysisError:null, analysis:this.state.analysis ? {...this.state.analysis,status:this.state.analysis.score ? "stale":"unavailable"} : null});
     void this.persist().catch(() => this.change({saveState:"error",problem:"Device storage is unavailable. Keep this screen open and try saving again."}));
     this.schedule();
   }
@@ -302,7 +303,7 @@ export class CvEditorSession {
     if (!doc || this.disposed || this.dirty) return;
     const controller = new AbortController();
     this.analyzing = controller;
-    this.change({analysisLoading:true,problem:null});
+    this.change({analysisLoading:true,analysisError:null,problem:null});
     try {
       const analysis = await this.deps.analyze(doc.revision,controller.signal);
       if (this.disposed || controller.signal.aborted) return;
@@ -311,7 +312,7 @@ export class CvEditorSession {
         this.change({analysis,document:{...current,analysis}});
         await this.persist();
       }
-    } catch (e) { if (!controller.signal.aborted && !this.disposed) this.change({problem:errorMessage(e)}); }
+    } catch (e) { if (!controller.signal.aborted && !this.disposed) this.change({analysisError:errorMessage(e)}); }
     finally { if (this.analyzing === controller) { this.analyzing = null; this.change({analysisLoading:false}); } }
   }
   setActive(active: boolean) {

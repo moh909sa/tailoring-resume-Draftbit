@@ -49,6 +49,7 @@ export function DesignLayout({layout,options,onChange,onReload,mode="all"}: {lay
   const paper=<View className="min-h-14 flex-row items-center justify-between gap-2"><Text className="text-body text-foreground">Paper size</Text><View className="flex-row gap-1">{options.page_sizes.map(size=><Pressable key={size} accessibilityRole="radio" accessibilityLabel={`${size==='A4'?'A4':'Letter'} paper size`} accessibilityState={{checked:layout.pageSize===size}} onPress={()=>onChange({...layout,pageSize:size})} className={cn("min-h-11 native:min-h-[44px] min-w-16 items-center justify-center rounded-lg border bg-background px-3",layout.pageSize===size?"border-primary":"border-border")}><Text className={cn("text-caption font-medium",layout.pageSize===size?"text-primary":"text-foreground")}>{size==='A4'?'A4':'Letter'}</Text></Pressable>)}</View></View>;
   return <View className="gap-3">
     {mode !== "format" ? <>
+      {["swiss-two-column", "modern-two-column", "vivid", "deedy"].includes(layout.template) ? <View testID="ats-layout-warning" className="rounded border border-warning/80 bg-warning/5 px-3 py-3"><Text className="text-caption leading-5 text-foreground">Some ATS may read two-column resumes out of order.</Text></View> : null}
       {templateCards}
       {!options.templates.includes(layout.template)?<Text className="text-caption text-muted-foreground">Your saved {layoutTemplateName(layout.template)} template is preserved.</Text>:null}
     </>:null}

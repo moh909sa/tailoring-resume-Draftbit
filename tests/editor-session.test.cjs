@@ -16,7 +16,7 @@ const pdf=load('lib/editor/pdfTypes.ts');
 const copy=v=>JSON.parse(JSON.stringify(v));
 const doc=(revision=1,summary='Original')=>({tailoring_id:'cv-a',revision,updated_at:'2026-10-31T12:00:00Z',resume:{summary,additional:{technicalSkills:[]}},confirmed_skills:[],job:{title:'Engineer',company:null,description:'Job description'},analysis:null});
 const pause=()=>new Promise(resolve=>setImmediate(resolve));
-function harness({raw=null,server=doc(),save,load:loadDocument}={}) {
+function harness({raw=null,server=doc(),save,load:loadDocument,analyze}={}) {
   let stored=raw, remote=server, counter=0;
   const writes=[], mutations=[],states=[];
   const session=new CvEditorSession({
@@ -33,7 +33,7 @@ function harness({raw=null,server=doc(),save,load:loadDocument}={}) {
       remote={...remote,revision:remote.revision+1,resume:copy(body.resume),confirmed_skills:copy(body.confirmed_skills)};
       return copy(remote);
     },
-    analyze:async revision=>({status:'current',revision,score:{overall_score:72},total_keywords:10,matched_count:7}),
+    analyze:analyze??(async revision=>({status:'current',revision,score:{overall_score:72},total_keywords:10,matched_count:7})),
     onState:value=>states.push(value),
   });
   return {session,writes,mutations,states,get stored(){return stored;},set remote(value){remote=value;},get remote(){return remote;}};
@@ -119,4 +119,22 @@ test('legacy Job Match workspace restores Content without losing draft, section 
   const original=doc();const raw=JSON.stringify({version:1,document:original,resume:{summary:'Pending edit'},confirmedSkills:[],pending:null,dirty:true,workspace:{tool:'match',trayOpen:true,sectionKey:'summary',matchSection:'highlights',panelHeight:250}});
   const h=harness({raw});await h.session.restore();
   assert.equal(h.session.snapshot.workspace.tool,'content');assert.equal(h.session.snapshot.workspace.sectionKey,'summary');assert.equal(h.session.snapshot.workspace.matchSection,'highlights');assert.equal(h.session.snapshot.workspace.panelHeight,250);assert.equal(h.session.snapshot.resume.summary,'Pending edit');assert.equal(h.mutations.length,0);h.session.dispose();
+});
+
+
+test('Update Match saves first, retains the old score during loading, and clears stale only for the latest saved edits',async()=>{
+  let release,requestedRevision;const initial={...doc(),analysis:{status:'current',revision:1,score:{overall_score:60}}};
+  const h=harness({server:initial,analyze:(revision)=>{requestedRevision=revision;return new Promise(resolve=>release=resolve);}});
+  await h.session.restore();h.session.update({...h.session.snapshot.resume,summary:'Saved changes'});
+  const updating=h.session.refreshAnalysis();
+  await pause();await pause();assert.equal(requestedRevision,2);assert.equal(h.session.snapshot.analysisLoading,true);assert.equal(h.session.snapshot.analysis.score.overall_score,60);assert.notEqual(h.session.snapshot.analysis.revision,h.session.snapshot.document.revision);
+  release({status:'current',revision:2,score:{overall_score:77}});await updating;
+  assert.equal(h.session.snapshot.analysis.status,'current');assert.equal(h.session.snapshot.analysis.revision,h.session.snapshot.document.revision);assert.equal(h.session.snapshot.analysisLoading,false);h.session.dispose();
+});
+
+test('failed analysis retains previous results and exposes analysis retry independently from save errors',async()=>{
+  let fail=true;const initial={...doc(),analysis:{status:'stale',revision:1,score:{overall_score:60}}};
+  const h=harness({server:initial,analyze:async revision=>{if(fail)throw Error('Match request failed');return {status:'current',revision,score:{overall_score:75}};}});
+  await h.session.restore();await h.session.refreshAnalysis();assert.equal(h.session.snapshot.analysisError,'Match request failed');assert.equal(h.session.snapshot.problem,null);assert.equal(h.session.snapshot.analysis.score.overall_score,60);
+  fail=false;await h.session.refreshAnalysis();assert.equal(h.session.snapshot.analysisError,null);assert.equal(h.session.snapshot.analysis.status,'current');h.session.dispose();
 });
