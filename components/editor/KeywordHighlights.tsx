@@ -27,10 +27,12 @@ function ResumeValue({ value, path, parts, skills = false, styles }: { value: Js
     return <View className={chips ? "min-w-0 flex-row flex-wrap gap-1.5" : "gap-3"}>
       {value.map((item, index) => {
         if (!hasText(item)) return null;
+        const skillChip = chips && typeof path[0] === "string" && /skills|^additional$/i.test(path[0]) && (path.some(part => typeof part === "string" && /skills/i.test(part)) || path[path.length - 1] === "additional");
+        const addedSkill = skillChip && parts.get(highlightPath([...path, index]))?.some(span => span.kind === "added");
         const bullet = typeof item === "string" && !chips && styles?.[index] !== "plain" && !/<(?:ul|ol|li)\b/i.test(item);
-        return <View key={index} className={chips ? "max-w-full shrink rounded-sm bg-muted px-2 py-1" : "min-w-0 flex-row items-start gap-2"}>
+        return <View key={index} className={chips ? "max-w-full shrink rounded-sm px-2 py-1 " + (addedSkill ? "bg-highlight-added" : "bg-muted") : "min-w-0 flex-row items-start gap-2"}>
           {bullet ? <Text className="text-body leading-6 text-foreground">•</Text> : null}
-          <View className={chips ? "min-w-0 shrink" : "min-w-0 flex-1"}><ResumeValue value={item} path={[...path, index]} parts={parts} skills={skills} /></View>
+          {addedSkill && typeof item === "string" ? <Text selectable className="min-w-0 text-body leading-6 text-highlight-added-foreground web:break-words">{plainText(item)}</Text> : <View className={chips ? "min-w-0 shrink" : "min-w-0 flex-1"}><ResumeValue value={item} path={[...path, index]} parts={parts} skills={skills} /></View>}
         </View>;
       })}
     </View>;

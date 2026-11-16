@@ -915,7 +915,7 @@ test('Keyword Highlights presents the legend followed by the complete saved docu
   assert.ok(updatedSpans.some(n=>text(n)==='TCP/IP'&&n.props.className.includes('bg-highlight-matched')));
   assert.ok(updatedSpans.some(n=>text(n)==='VLAN'&&n.props.className.includes('bg-highlight-added')));
   props.keywords=['English communication (written and spoken)'];props.jobDescription='English communication (written and spoken)';h.render();
-  assert.ok(nodes(h.render()).some(n=>n.type==='Text'&&text(n)==='English communication (written and spoken)'&&n.props.className?.includes('bg-highlight-added')),'new engine terms recompute highlights');
+  assert.ok(nodes(h.render()).some(n=>n.type==='Text'&&text(n)==='English communication (written and spoken)'&&n.props.className?.includes('text-highlight-added-foreground')),'new engine terms recompute highlights');
   props.history=null;h.render();assert.doesNotMatch(h.getText(),/Some keyword history|No verified keyword|Retry highlights/);
   let retries=0;props.historyError=true;props.onRetry=()=>{retries++;};h.render();
   assert.doesNotMatch(h.getText(),/Only verified occurrences/);assert.match(h.getText(),/Complete custom paragraph/);
@@ -987,4 +987,23 @@ test('first scoring replaces empty breakdown and stale scoring retains bars with
  props.analysis={status:'stale',revision:5,score:{overall_score:75,sub_scores:{keyword_match:75},recommendations:[]},matched_keywords:['TCP/IP'],matched_count:1,total_keywords:1};h.render();assert.match(h.getText(),/Updating match…/);assert.match(h.getText(),/75/);assert.ok(h.find(n=>n.props.accessibilityRole==='progressbar'));
  props.section='highlights';h.render();assert.match(h.getText(),/Updating match…/);assert.equal(h.find(n=>typeof n.type==='function'&&n.type.name==='KeywordHighlights').props.keywords[0],'TCP/IP');
  props.loading=false;props.error='private raw error';h.render();assert.match(h.getText(),/Couldn’t update your match/);assert.ok(h.button('Retry Update Match'));assert.doesNotMatch(h.getText(),/private raw error/);h.dispose();
+});
+
+
+test('verified additions fill entire skill chips, while matches and other sections keep inline colors',()=>{
+ const h=harness();const long='Basic networking (Wi-Fi, cabling, IP addressing, DNS/DHCP)';
+ const source={summary:'Supported TCP/IP.',workExperience:[{id:1,description:['Maintained TCP/IP.']}],additional:{technicalSkills:['Python'],languages:[]}};
+ const resume={...source,summary:'Supported TCP/IP. Added networking.',workExperience:[{id:1,description:['Maintained TCP/IP. Added networking.']}],additional:{technicalSkills:['Python','SQL',long],languages:['English']}};
+ const props={resume,keywords:['TCP/IP','Python','SQL','networking','English'],jobDescription:'TCP/IP Python SQL networking English',history:{original:source,changes:[],keywords:[]}};
+ h.open('components/editor/KeywordHighlights.tsx',{},'KeywordHighlights',props);
+ const chipNodes=()=>nodes(h.render()).filter(n=>n.type==='View'&&n.props.className?.includes('rounded-sm px-2 py-1'));
+ for(const label of ['SQL',long]){
+  const chip=chipNodes().find(n=>text(n)===label);assert.ok(chip);assert.match(chip.props.className,/bg-highlight-added/);
+  const labels=nodes(chip).filter(n=>n.type==='Text');assert.equal(labels.length,1,'one plain label without segmented inline backgrounds');
+  assert.equal(text(labels[0]),label);assert.match(labels[0].props.className,/text-highlight-added-foreground/);assert.doesNotMatch(labels[0].props.className,/bg-highlight/);assert.equal(labels[0].props.numberOfLines,undefined);
+ }
+ const matched=chipNodes().find(n=>text(n)==='Python');assert.match(matched.props.className,/bg-muted/);assert.ok(nodes(matched).some(n=>n.props.className?.includes('bg-highlight-matched')));
+ const language=chipNodes().find(n=>text(n)==='English');assert.match(language.props.className,/bg-muted/,'non-Skills chips retain word-level treatment');
+ assert.equal(nodes(h.render()).filter(n=>n.type==='Text'&&text(n)==='networking'&&n.props.className?.includes('bg-highlight-added')).length,2,'Summary and Experience still highlight just the added word');
+ props.history=null;h.render();assert.ok(chipNodes().every(n=>!n.props.className.includes('bg-highlight-added')),'unknown provenance never fills chips');h.dispose();
 });

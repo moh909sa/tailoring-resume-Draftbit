@@ -75,3 +75,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Keyword Highlights retains account/document history across tabs and uses a compact legend with failure-only retry.
 
 - Job Match automatically analyzes missing or stale saved revisions once per visit, sharing the result across tabs and preserving prior scores during refresh.
+
+- Keyword Highlights fills entire Skills chips blue when their existing classification contains a verified added keyword, preserving inline highlights elsewhere.
