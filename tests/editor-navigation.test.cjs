@@ -244,14 +244,13 @@ test('PDF Back returns to the originating screen for existing CVs and to Tailore
 });
 
 
-test("Job Match does not turn role keywords into invented skills, and confirmed missing skills can be restored", () => {
-  const h=harness();const added=[];
-  const props={analysis:{status:'current',revision:1,score:{overall_score:70,sub_scores:{},recommendations:[]},missing_keywords:['Senior engineer','Python'],matched_keywords:[],required_skills:['Python'],preferred_skills:[],total_keywords:2,matched_count:0},revision:1,dirty:false,loading:false,jobDescription:'Full job',confirmedSkills:['Python'],onAddSkill:skill=>added.push(skill),onRefresh:()=>{},onEdit:()=>{}};
+test("Job Match shows informational missing keywords without skill quick-add controls or a mutation callback", () => {
+  const h=harness();
+  const props={analysis:{status:'current',revision:1,score:{overall_score:70,sub_scores:{},recommendations:[]},missing_keywords:['Senior engineer','Python'],matched_keywords:[],required_skills:['Python'],preferred_skills:[],total_keywords:2,matched_count:0},revision:1,dirty:false,loading:false,jobDescription:'Full job',onRefresh:()=>{},onEdit:()=>{}};
   h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
-  h.button('Add skills I have').props.onPress();const tree=h.render();
-  const buttons=nodes(tree).filter(n=>n.props.accessibilityLabel?.includes('add to Skills'));
-  assert.equal(buttons.length,1);buttons[0].props.onPress();assert.deepEqual(added,['Python']);
-  assert.match(text(tree),/Senior engineer/);assert.match(text(tree),/Other job keywords/);
+  assert.deepEqual(nodes(h.render()).filter(n=>n.props.testID==='missing-keyword-chip').map(text),['Senior engineer','Python']);
+  assert.doesNotMatch(h.getText(),/Add skills I have|Add to Skills|I have this|Hide skill choices/);
+  assert.deepEqual(nodes(h.render()).filter(n=>n.props.accessibilityRole==='header').map(text),['ATS Score Breakdown','Missing Keywords','Recommendations']);h.dispose();
 });
 
 test("leaving while a save is in flight cannot reopen a late PDF preview", async () => {
@@ -387,7 +386,7 @@ test('editor sections respect saved names/order while keeping Personal Informati
 
 test('Job Match Overview preserves engine precision, section order and stale evidence boundaries',()=>{
   const h=harness();let updates=0;
-  const props={analysis:{status:'current',revision:6,score:{overall_score:72.4,sub_scores:{skills_coverage:89.3,keyword_match:66.7},recommendations:['Use accurate examples.']},matched_keywords:['Python','SQL'],missing_keywords:['React'],required_skills:['React'],preferred_skills:[],matched_count:2,total_keywords:3},revision:6,dirty:false,loading:false,jobDescription:'Full saved job description',confirmedSkills:['Python'],onRefresh:()=>updates++,onAddSkill:()=>{},onEdit:()=>{}};
+  const props={analysis:{status:'current',revision:6,score:{overall_score:72.4,sub_scores:{skills_coverage:89.3,keyword_match:66.7},recommendations:['Use accurate examples.']},matched_keywords:['Python','SQL'],missing_keywords:['React'],required_skills:['React'],preferred_skills:[],matched_count:2,total_keywords:3},revision:6,dirty:false,loading:false,jobDescription:'Full saved job description',confirmedSkills:['Python'],onRefresh:()=>updates++,onEdit:()=>{}};
   h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
   assert.match(h.getText(),/72\.4/);assert.match(h.getText(),/66\.7%/);assert.match(h.getText(),/89\.3%/);assert.match(h.getText(),/2 of 3/);
   const titles=['ATS Score Breakdown','Missing Keywords','Recommendations'];
@@ -408,7 +407,7 @@ test('Job Match Overview preserves engine precision, section order and stale evi
 });
 
 test('Overview distinguishes genuine zero, full scores and unavailable metrics without inventing values',()=>{
-  const h=harness();const props={analysis:{status:'current',revision:1,score:{overall_score:0,sub_scores:{keyword_match:0,skills_coverage:100,title_match:null,title_alignment:99,section_completeness:70.8},recommendations:[]},matched_keywords:[],missing_keywords:[],required_skills:[],preferred_skills:[],matched_count:0,total_keywords:0},revision:1,dirty:false,loading:false,jobDescription:'Job',confirmedSkills:[],onRefresh:()=>{},onAddSkill:()=>{},onEdit:()=>{}};
+  const h=harness();const props={analysis:{status:'current',revision:1,score:{overall_score:0,sub_scores:{keyword_match:0,skills_coverage:100,title_match:null,title_alignment:99,section_completeness:70.8},recommendations:[]},matched_keywords:[],missing_keywords:[],required_skills:[],preferred_skills:[],matched_count:0,total_keywords:0},revision:1,dirty:false,loading:false,jobDescription:'Job',confirmedSkills:[],onRefresh:()=>{},onEdit:()=>{}};
   h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
   const bar=label=>h.find(n=>n.props.accessibilityRole==='progressbar'&&n.props.accessibilityLabel===label);
   const fill=label=>nodes(bar(label)).find(n=>n.props.testID==='score-bar-fill');
@@ -422,13 +421,13 @@ test('Overview distinguishes genuine zero, full scores and unavailable metrics w
 
 test('Overview retains keyword chips, concise recommendations and help while moving layout guidance to Templates',()=>{
   const h=harness(),edits=[];const long='English communication (written and spoken) with cross-functional technical support teams';
-  const props={analysis:{status:'stale',revision:1,score:{overall_score:67.3,sub_scores:{},recommendations:['Add Oracle NetSuite to your skills.','Use the exact job title in your headline. Recruiters filter by title.','Use the exact job title in your headline.','Quantify achievements with measurable results.','Check your dates.']},missing_keywords:[long,'Oracle NetSuite',long],required_skills:['Oracle NetSuite'],preferred_skills:[],matched_count:0,total_keywords:2},revision:2,dirty:false,loading:false,template:'swiss-two-column',jobDescription:'Job',savedResume:{personalInfo:{title:'Engineer'}},confirmedSkills:[],onRefresh:()=>{},onAddSkill:()=>{},onEdit:key=>edits.push(key)};
+  const props={analysis:{status:'stale',revision:1,score:{overall_score:67.3,sub_scores:{},recommendations:['Add Oracle NetSuite to your skills.','Use the exact job title in your headline. Recruiters filter by title.','Use the exact job title in your headline.','Quantify achievements with measurable results.','Check your dates.']},missing_keywords:[long,'Oracle NetSuite',long],required_skills:['Oracle NetSuite'],preferred_skills:[],matched_count:0,total_keywords:2},revision:2,dirty:false,loading:false,template:'swiss-two-column',jobDescription:'Job',savedResume:{personalInfo:{title:'Engineer'}},confirmedSkills:[],onRefresh:()=>{},onEdit:key=>edits.push(key)};
   h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
   const chips=nodes(h.render()).filter(n=>n.props.testID==='missing-keyword-chip');assert.equal(chips.length,2);assert.equal(text(chips[0]),long);assert.match(chips[0].props.className,/max-w-full/);assert.equal(nodes(chips[0]).find(n=>n.type==='Text').props.numberOfLines,undefined);
   assert.equal(h.find(n=>n.props.testID==='ats-layout-warning'),undefined);
   assert.match(h.getText(),/Use the exact job title in your headline\./);assert.match(h.getText(),/Quantify achievements/);assert.doesNotMatch(h.getText(),/Add Oracle NetSuite|Recruiters filter|Check your dates|Edit experience|Edit skills|version|previous analysis/i);
   assert.equal(h.getText().match(/Results out of date/g).length,1);
-  assert.ok(h.button('Add skills I have'));h.button('Edit headline').props.onPress();assert.deepEqual(edits,['personalInfo']);
+  assert.doesNotMatch(h.getText(),/Add skills I have|Add to Skills/);h.button('Edit headline').props.onPress();assert.deepEqual(edits,['personalInfo']);
   assert.equal(h.button('About Job Match').props.accessibilityState.expanded,false);assert.doesNotMatch(h.getText(),/Scores are estimates/);
   h.button('About Job Match').props.onPress();h.render();assert.match(h.getText(),/Scores are estimates/);assert.match(h.getText(),/accurate action verbs/);h.dispose();
 });
@@ -443,7 +442,7 @@ test('Templates alone shows the short two-column notice for the selected layout'
 
 test('Overview keeps stale, loading and retry in the score area and clears stale status at the saved revision',()=>{
   const h=harness();let calls=0;
-  const props={analysis:{status:'current',revision:2,score:{overall_score:67.3,sub_scores:{keyword_match:70.8},recommendations:[]},missing_keywords:[],required_skills:[],preferred_skills:[],matched_count:3,total_keywords:5},revision:3,dirty:false,loading:false,confirmedSkills:[],jobDescription:'Job',onRefresh:()=>calls++,onAddSkill:()=>{},onEdit:()=>{}};
+  const props={analysis:{status:'current',revision:2,score:{overall_score:67.3,sub_scores:{keyword_match:70.8},recommendations:[]},missing_keywords:[],required_skills:[],preferred_skills:[],matched_count:3,total_keywords:5},revision:3,dirty:false,loading:false,confirmedSkills:[],jobDescription:'Job',onRefresh:()=>calls++,onEdit:()=>{}};
   h.open('components/editor/JobMatch.tsx',{},'JobMatch',props);
   const status=()=>h.find(n=>n.props.testID==='match-results-status');
   assert.match(text(status()),/Results out of date/);assert.match(text(status()),/Update Match/);assert.match(h.getText(),/67\.3/);
@@ -559,14 +558,13 @@ test('Personal Information and Summary open, save, and close at the original lis
   assert.deepEqual(h.calls,[['push',{pathname:'/cv-editor/[id]/preview',params:{id:TAILORED,revision:'8',returnToEditor:'1'}}]]);
 });
 
-test('dedicated Job Match retains refresh, skill attestation and edit-section actions on the same document',async(t)=>{
+test('dedicated Job Match retains refresh and contextual navigation without a skill mutation callback',async(t)=>{
   const h=harness(),document=makeDocument();t.after(()=>h.dispose());let refreshed=0,updates=[];
   const editor={document,resume:document.resume,workspace:{tool:'format',trayOpen:true,panelHeight:250,sectionKey:'summary',fieldPath:null,fieldLabel:null,matchSection:'overview'},confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:{status:'current',revision:6},analysisLoading:true,flush:async()=>assert.fail('navigation must not flush'),refreshAnalysis:()=>{refreshed++;},updateResume:(resume,skills)=>{editor.resume=resume;editor.confirmedSkills=skills;updates.push({resume,skills});},updateWorkspace:patch=>{editor.workspace={...editor.workspace,...patch};}};
   h.open('app/cv-editor/[id]/job-match.tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
   let view=h.find(n=>n.type==='JobMatch');assert.equal(view.props.analysis,editor.analysis);assert.equal(view.props.loading,true);assert.equal(view.props.revision,6);
   view.props.onRefresh();assert.equal(refreshed,1);
-  view.props.onAddSkill('Python');h.render();assert.deepEqual(updates[0].resume.additional.technicalSkills,['Python']);assert.deepEqual(updates[0].skills,['Python']);
-  h.find(n=>n.type==='JobMatch').props.onAddSkill('Python');assert.deepEqual(updates[1].resume.additional.technicalSkills,['Python']);
+  assert.equal(view.props.onAddSkill,undefined);assert.equal(updates.length,0);
   h.find(n=>n.type==='JobMatch').props.onEdit('workExperience');assert.deepEqual(h.calls,[['back']]);assert.equal(editor.workspace.tool,'content');assert.equal(editor.workspace.sectionKey,'workExperience');assert.equal(editor.workspace.panelHeight,250);
   const e=harness();t.after(()=>e.dispose());e.open('app/cv-editor/[id].tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});assert.equal(e.find(n=>n.type==='SectionEditor').props.section.key,'workExperience');
 });
@@ -915,4 +913,30 @@ test('recommendation display removes chip repetition and duplicate themes withou
   const original=['Quantify SQL achievements.','Use the exact job title in your headline. Recruiters filter literally.','Match the job title in your professional title.','Add measurable results to your bullets.','Quantify achievements with numbers.','Use strong action verbs.'];const before=copy(original);
   assert.deepEqual(overviewRecommendations(original,['SQL']).map(item=>item.text),['Use the exact job title in your headline.','Add measurable results to your bullets.']);
   assert.deepEqual(original,before);assert.deepEqual(overviewRecommendations(['Add missing keywords.','Some irrelevant description.'],[]),[]);
+});
+
+
+test('missing keywords can be reviewed, manually added in Edit Resume, saved, then analyzed without changing confirmations',async(t)=>{
+  let remote=makeDocument(),analyzedRevision=null;
+  remote.resume.additional={technicalSkills:['Existing skill'],languages:['Arabic']};remote.confirmed_skills=['Existing skill'];
+  remote.analysis={status:'current',revision:6,score:{overall_score:60,sub_scores:{},recommendations:[]},missing_keywords:['Python'],matched_keywords:[],required_skills:['Python'],preferred_skills:[],matched_count:0,total_keywords:1};
+  const manager=new CvEditorSession({read:async()=>null,write:async()=>{},uuid:()=> '44444444-4444-4444-8444-444444444444',parseDocument:v=>v,load:async()=>copy(remote),save:async body=>{remote={...remote,revision:remote.revision+1,resume:copy(body.resume),confirmed_skills:copy(body.confirmed_skills),analysis:{...remote.analysis,status:'stale'}};return copy(remote);},analyze:async revision=>{analyzedRevision=revision;assert.ok(remote.resume.additional.technicalSkills.includes('Python'));return {...remote.analysis,status:'current',revision,missing_keywords:[],matched_keywords:['Python'],matched_count:1};},onState:()=>{}});
+  t.after(()=>manager.dispose());await manager.restore();
+  const useEditor=()=>({...manager.snapshot,flush:()=>manager.flush(),updateResume:(resume,skills)=>manager.update(resume,skills),updateWorkspace:patch=>manager.updateWorkspace(patch),refreshAnalysis:()=>manager.refreshAnalysis()});
+  const mocks={'@/lib/editor/useCvEditor':{useCvEditor:useEditor}};
+  const match=harness();t.after(()=>match.dispose());match.open('app/cv-editor/[id]/job-match.tsx',mocks);
+  const initial=match.find(n=>n.type==='JobMatch').props;
+  const overview=harness();t.after(()=>overview.dispose());overview.open('components/editor/JobMatch.tsx',{},'JobMatch',initial);
+  assert.match(overview.getText(),/Python/);assert.doesNotMatch(overview.getText(),/Add skills I have|Add to Skills/);
+  match.button('Back to Edit Resume').props.onPress();assert.deepEqual(match.calls,[['back']]);
+  const editor=harness();t.after(()=>editor.dispose());editor.open('app/cv-editor/[id].tsx',mocks);
+  editor.find(n=>n.props.accessibilityLabel==='Edit Skills').props.onPress();editor.render();
+  const section=editor.find(n=>n.type==='SectionEditor');assert.deepEqual(section.props.section.value.technicalSkills,['Existing skill']);
+  section.props.onChange({...section.props.section.value,technicalSkills:['Existing skill','Python']});editor.render();
+  editor.find(n=>n.type==='SectionEditor').props.onClose();await editor.pump();
+  assert.deepEqual(remote.resume.additional.technicalSkills,['Existing skill','Python']);assert.deepEqual(remote.resume.additional.languages,['Arabic']);assert.deepEqual(remote.confirmed_skills,['Existing skill']);
+  editor.button('Job Match').props.onPress();assert.equal(editor.calls.at(-1)[1].pathname,'/cv-editor/[id]/job-match');
+  match.render();assert.equal(match.find(n=>n.type==='JobMatch').props.revision,remote.revision);
+  match.find(n=>n.type==='JobMatch').props.onRefresh();await match.pump();
+  assert.equal(analyzedRevision,remote.revision);assert.equal(manager.snapshot.analysis.status,'current');assert.deepEqual(manager.snapshot.analysis.missing_keywords,[]);assert.deepEqual(manager.snapshot.confirmedSkills,['Existing skill']);
 });

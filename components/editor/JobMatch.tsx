@@ -24,9 +24,7 @@ export type JobMatchProps = {
   historyLoading?: boolean;
   historyError?: boolean;
   onRetryHistory?: () => void;
-  confirmedSkills: string[];
   onRefresh: () => void;
-  onAddSkill: (skill: string) => void;
   onEdit: (section: string) => void;
 };
 
@@ -51,18 +49,14 @@ const tips = [
   "Use accurate action verbs to describe what you did.",
 ];
 
-export function JobMatch({ section = "overview", analysis, revision, dirty, loading, error, jobDescription, savedResume, history = null, historyLoading, historyError, onRetryHistory, confirmedSkills, onRefresh, onAddSkill, onEdit }: JobMatchProps) {
-  const [showSkillChoices, setShowSkillChoices] = useState(false);
+export function JobMatch({ section = "overview", analysis, revision, dirty, loading, error, jobDescription, savedResume, history = null, historyLoading, historyError, onRetryHistory, onRefresh, onEdit }: JobMatchProps) {
   const [showHelp, setShowHelp] = useState(false);
   const current = !dirty && analysis?.status === "current" && analysis.revision === revision;
   const score = analysis?.score;
   const overall = score?.overall_score ?? null;
   const subScores = score?.sub_scores ?? {};
-  const confirmed = new Set(confirmedSkills.map(skill => skill.toLocaleLowerCase()));
   const required = new Set(analysis?.required_skills?.map(skill => skill.toLocaleLowerCase()));
-  const skillTerms = new Set([...(analysis?.required_skills ?? []), ...(analysis?.preferred_skills ?? [])].map(skill => skill.toLocaleLowerCase()));
   const missing = [...new Set(analysis?.missing_keywords ?? [])];
-  const missingSkills = missing.filter(skill => skillTerms.has(skill.toLocaleLowerCase()));
   const recommendations = overviewRecommendations(score?.recommendations ?? [], missing);
   const profileKey = ["personalInfo", "personalInformation"].find(key => isJsonObject(savedResume?.[key]) && ["title", "professionalTitle", "professional_title"].some(field => typeof (savedResume?.[key] as JsonObject)?.[field] === "string"));
   const bar = (label: string, value: number | null) => <View accessible accessibilityRole="progressbar" accessibilityLabel={label} accessibilityValue={value === null ? { text: "Unavailable" } : { min: 0, max: 100, now: value, text: value + "%" }} className="h-1.5 w-full overflow-hidden border border-foreground/40 bg-background">
@@ -102,13 +96,6 @@ export function JobMatch({ section = "overview", analysis, revision, dirty, load
         <View className="gap-2.5">
           <Text accessibilityRole="header" className="text-h6 text-foreground">Missing Keywords</Text>
           {missing.length > 0 ? <View className="flex-row flex-wrap items-start gap-1.5">{missing.map(skill => <View key={skill} testID="missing-keyword-chip" className="max-w-full shrink rounded-sm border border-score-low/75 bg-score-low/5 px-2 py-1"><Text selectable accessibilityLabel={required.has(skill.toLocaleLowerCase()) ? skill + ". Required in job." : skill} className="shrink text-caption leading-5 text-score-low web:break-words">{skill}</Text></View>)}</View> : <Text className="text-body leading-6 text-muted-foreground">{score ? "No missing keywords were reported." : "No keyword results yet."}</Text>}
-          {missingSkills.length > 0 ? <>
-            <Button variant="ghost" size="sm" accessibilityState={{ expanded: showSkillChoices }} className="min-h-11 native:min-h-[44px] max-w-full self-start px-0" onPress={() => setShowSkillChoices(value => !value)}><Text className="text-caption text-primary">{showSkillChoices ? "Hide skill choices" : "Add skills I have"}</Text></Button>
-            {showSkillChoices ? <View className="gap-3 border-t border-border pt-3">
-              <Text className="text-caption leading-5 text-muted-foreground">Include only skills and qualifications you have. Other job keywords belong in your experience only where they accurately fit.</Text>
-              {missingSkills.map(skill => <View key={skill} className="gap-2"><Text className="text-body text-foreground">{skill}</Text>{confirmed.has(skill.toLocaleLowerCase()) ? <Text className="text-caption leading-5 text-muted-foreground">You previously confirmed this skill.</Text> : null}<Button variant="secondary" size="sm" className="min-h-11 native:min-h-[44px] max-w-full self-start" onPress={() => onAddSkill(skill)} accessibilityLabel={"I have " + skill + ", add to Skills"}><Text className="shrink text-caption">{confirmed.has(skill.toLocaleLowerCase()) ? "Add to Skills" : "I have this · Add to Skills"}</Text></Button></View>)}
-            </View> : null}
-          </> : null}
         </View>
         <View className="gap-2.5">
           <Text accessibilityRole="header" className="text-h6 text-foreground">Recommendations</Text>

@@ -69,3 +69,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Keyword Highlights renders the saved resume in one scroll with per-occurrence yellow matches and verified blue additions, using owned original text or exact tracked comparisons and leaving ambiguous history plain.
 
 - Job Match Overview keeps refresh/status beside the score, limits recommendations, collapses help, and places two-column ATS guidance in Templates.
+
+- Job Match missing keywords are informational only; skill edits use Edit Resume while tailoring confirmations remain unchanged.
