@@ -23,7 +23,7 @@ export default function JobMatchScreen() {
   const editor = useCvEditor(id);
   const document = editor.document;
   const workspace = editor.workspace ?? emptyWorkspace();
-  const keywordHistory = useKeywordHistory(session?.user.id, document?.tailoring_id, workspace.matchSection === "highlights");
+  const keywordHistory = useKeywordHistory(session?.user.id, document?.tailoring_id);
   const sections = editor.resume ? resumeSections(editor.resume) : [];
   const [showSignIn, setShowSignIn] = useState(false);
   const [refreshing, setRefreshing] = useState(false);

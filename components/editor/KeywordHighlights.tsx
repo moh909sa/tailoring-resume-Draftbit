@@ -62,14 +62,13 @@ export function HighlightedResume({ resume, parts }: { resume: JsonObject; parts
 
 export function KeywordHighlights({ resume, keywords, jobDescription, history, historyLoading = false, historyError = false, onRetry }: { resume: JsonObject; keywords: string[]; jobDescription: string; history: KeywordHistory | null; historyLoading?: boolean; historyError?: boolean; onRetry?: () => void }) {
   const highlighted = useMemo(() => buildKeywordHighlights(resume, keywords, jobDescription, history), [resume, keywords, jobDescription, history]);
-  return <View className="min-w-0 gap-4">
-    <View className="gap-3 py-1">
-      <View className="gap-2.5">
+  return <View className="min-w-0 gap-3">
+    <View className="gap-1">
+      <View className="gap-2">
         <View className="flex-row items-center gap-2.5"><View className="h-4 w-4 shrink-0 rounded-sm bg-highlight-matched" /><Text className="min-w-0 flex-1 text-h6 leading-5 text-foreground">Yellow — Matched keywords</Text></View>
         <View className="flex-row items-center gap-2.5"><View className="h-4 w-4 shrink-0 rounded-sm bg-highlight-added" /><Text className="min-w-0 flex-1 text-h6 leading-5 text-foreground">Blue — Keywords you added</Text></View>
       </View>
-      <Text className="text-body leading-6 text-muted-foreground">Yellow marks keywords that were already in your resume and also appear in the job description. Blue shows where keywords were added during tailoring or editing.</Text>
-      {historyLoading ? <Text accessibilityLiveRegion="polite" className="text-caption leading-5 text-muted-foreground">Checking keyword history…</Text> : historyError || highlighted.unverified > 0 ? <View className="gap-1"><Text className="text-caption leading-5 text-muted-foreground">Some keyword history could not be verified. Only verified occurrences are highlighted.</Text>{historyError && onRetry ? <Button variant="ghost" size="sm" className="min-h-11 native:min-h-[44px] self-start px-0" onPress={onRetry}><Text className="text-caption text-primary">Retry keyword history</Text></Button> : null}</View> : !highlighted.verified ? <Text className="text-caption leading-5 text-muted-foreground">No verified keyword matches were found in this saved resume.</Text> : null}
+      {historyError && onRetry ? <Button variant="ghost" size="sm" disabled={historyLoading} className="min-h-11 native:min-h-[44px] self-start px-0" onPress={onRetry}><Text className="text-caption text-primary">Retry highlights</Text></Button> : null}
     </View>
     <View className="gap-2.5">
       <View className="flex-row flex-wrap items-baseline justify-between gap-x-3 gap-y-1"><Text accessibilityRole="header" className="text-h6 text-foreground">Your resume</Text><Text className="text-caption text-muted-foreground">Latest saved version</Text></View>

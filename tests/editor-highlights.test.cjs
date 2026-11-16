@@ -149,6 +149,7 @@ function hookHarness(readHistory) {
   const slots=[];let cursor=0,dirty=false,args=[],result;
   const effects=[];
   const react={
+    useRef(initial) {const i=cursor++;return (slots[i]??={current:initial});},
     useState(initial) {const i=cursor++;slots[i]??={value:initial};return [slots[i].value,value=>{slots[i].value=typeof value==='function'?value(slots[i].value):value;dirty=true;}];},
     useEffect(fn,deps) {const i=cursor++,old=slots[i];if(!old||deps.some((v,j)=>v!==old.deps[j])){slots[i]={deps,cleanup:old?.cleanup};effects.push(()=>{old?.cleanup?.();slots[i].cleanup=fn();});}},
   };
@@ -161,22 +162,30 @@ function hookHarness(readHistory) {
   return h;
 }
 
-test('history loading is lazy, aborts on navigation and fences completions by account/document', async()=>{
+test('history starts with owner/resume IDs, survives repeated tab renders, and fences account/document changes', async()=>{
   const pending=[];
   const h=hookHarness((owner,id,signal)=>new Promise((resolve,reject)=>pending.push({owner,id,signal,resolve,reject})));
   try {
-    assert.equal(h.render('a','cv',false).historyLoading,false);assert.equal(pending.length,0);
-    h.render('a','cv',true);assert.equal((await h.pump()).historyLoading,true);
-    assert.equal(h.render('b','cv',true).history,null);assert.equal(pending[0].signal.aborted,true);
+    assert.equal(h.render(undefined,'cv').historyLoading,false);assert.equal(pending.length,0);
+    h.render('a','cv');assert.equal((await h.pump()).historyLoading,true);
+    for(let i=0;i<6;i++)h.render('a','cv');
+    assert.equal(pending.length,1,'in-flight reads are reused');
+    assert.equal(h.render('b','cv').history,null);assert.equal(pending[0].signal.aborted,true);
     pending[0].resolve(history({summary:'PRIVATE ACCOUNT A'}));
     assert.equal((await h.pump()).history,null);
-    pending[1].resolve(history({summary:'ACCOUNT B'}));
-    assert.equal((await h.pump()).history.original.summary,'ACCOUNT B');
-    assert.equal(h.render('b','other',true).history,null);
+    const loaded=history({summary:'ACCOUNT B'});pending[1].resolve(loaded);
+    assert.equal((await h.pump()).history,loaded);
+    for(let i=0;i<6;i++){const view=h.render('b','cv');assert.equal(view.history,loaded);assert.equal(view.historyLoading,false);}
+    assert.equal(pending.length,2,'tab renders do not reload or clear history');
+    assert.equal(h.render('b','other').history,null);
     pending[2].reject(Error('Network failed'));
     const failed=await h.pump();assert.equal(failed.historyError,true);assert.equal(failed.historyLoading,false);
-    failed.retryHistory();await h.pump();assert.equal(pending.length,4);
-    h.render('b','other',false);assert.equal(pending[3].signal.aborted,true);assert.equal((await h.pump()).historyLoading,false);
+    failed.retryHistory();failed.retryHistory();await h.pump();assert.equal(pending.length,4);
+    failed.retryHistory();await h.pump();assert.equal(pending.length,4,'retry cannot restart an in-flight request');
+    pending[3].resolve({original:null,changes:[],keywords:[]});
+    const partial=await h.pump();assert.equal(partial.historyError,false,'unavailable provenance is not a loading failure');
+    assert.equal(partial.historyLoading,false);
+    h.render(undefined,undefined);assert.equal((await h.pump()).history,null);
   } finally {h.dispose();}
 });
 

@@ -71,3 +71,5 @@ Section editor fields wrap and grow from saved text before focus; Summary stays 
 - Job Match Overview keeps refresh/status beside the score, limits recommendations, collapses help, and places two-column ATS guidance in Templates.
 
 - Job Match missing keywords are informational only; skill edits use Edit Resume while tailoring confirmations remain unchanged.
+
+- Keyword Highlights retains account/document history across tabs and uses a compact legend with failure-only retry.

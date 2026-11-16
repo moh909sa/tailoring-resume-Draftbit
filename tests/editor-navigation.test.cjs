@@ -561,7 +561,13 @@ test('Personal Information and Summary open, save, and close at the original lis
 test('dedicated Job Match retains refresh and contextual navigation without a skill mutation callback',async(t)=>{
   const h=harness(),document=makeDocument();t.after(()=>h.dispose());let refreshed=0,updates=[];
   const editor={document,resume:document.resume,workspace:{tool:'format',trayOpen:true,panelHeight:250,sectionKey:'summary',fieldPath:null,fieldLabel:null,matchSection:'overview'},confirmedSkills:[],loading:false,error:null,saveState:'saved',problem:null,analysis:{status:'current',revision:6},analysisLoading:true,flush:async()=>assert.fail('navigation must not flush'),refreshAnalysis:()=>{refreshed++;},updateResume:(resume,skills)=>{editor.resume=resume;editor.confirmedSkills=skills;updates.push({resume,skills});},updateWorkspace:patch=>{editor.workspace={...editor.workspace,...patch};}};
-  h.open('app/cv-editor/[id]/job-match.tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor}});
+  const historyCalls=[],history={original:document.resume,changes:[],keywords:[]};
+  h.open('app/cv-editor/[id]/job-match.tsx',{'@/lib/editor/useCvEditor':{useCvEditor:()=>editor},'@/lib/editor/useKeywordHistory':{useKeywordHistory:(...args)=>{historyCalls.push(args);return {history,historyLoading:false,historyError:false};}}});
+  for(let i=0;i<6;i++){
+    editor.workspace.matchSection=i%2?'overview':'highlights';h.render();
+    assert.deepEqual(historyCalls.at(-1),[OWNER,document.tailoring_id],'history is requested independently of the active tab');
+    assert.equal(h.find(n=>n.type==='JobMatch').props.history,history);
+  }
   let view=h.find(n=>n.type==='JobMatch');assert.equal(view.props.analysis,editor.analysis);assert.equal(view.props.loading,true);assert.equal(view.props.revision,6);
   view.props.onRefresh();assert.equal(refreshed,1);
   assert.equal(view.props.onAddSkill,undefined);assert.equal(updates.length,0);
@@ -894,7 +900,7 @@ test('Keyword Highlights presents the legend followed by the complete saved docu
   h.open('components/editor/KeywordHighlights.tsx',{},'KeywordHighlights',props);
   const content=h.getText();
   assert.match(content,/Yellow — Matched keywords/);assert.match(content,/Blue — Keywords you added/);
-  assert.match(content,/Yellow marks keywords that were already in your resume and also appear in the job description. Blue shows where keywords were added during tailoring or editing./);
+  assert.doesNotMatch(content,/Yellow marks keywords|Some keyword history|Checking keyword history|Retry highlights/);
   assert.match(content,/Complete custom paragraph/);assert.match(content,/English communication \(written and spoken\)/);
   assert.ok(content.indexOf('Yellow —')<content.indexOf('Your resume'));assert.ok(content.indexOf('Your resume')<content.indexOf('Supported TCP/IP'));
   assert.deepEqual(nodes(h.render()).filter(n=>n.props.accessibilityRole==='header').map(text),['Your resume','Profile','Work history','Skills & awards','Community']);
@@ -903,7 +909,17 @@ test('Keyword Highlights presents the legend followed by the complete saved docu
   const spans=nodes(h.render()).filter(n=>n.type==='Text'&&/text-highlight-(matched|added)-foreground/.test(n.props.className??''));
   assert.ok(spans.some(n=>text(n)==='TCP/IP'&&n.props.className.includes('bg-highlight-matched')));
   assert.ok(spans.some(n=>text(n)==='VLAN'&&n.props.className.includes('bg-highlight-added')));
-  props.history=null;props.historyError=true;h.render();assert.match(h.getText(),/Only verified occurrences/);assert.match(h.getText(),/Complete custom paragraph/);
+  props.resume={...saved,summary:'Updated intro. Supported TCP/IP networks. Added VLAN monitoring.'};
+  h.render();assert.match(h.getText(),/Updated intro/);
+  const updatedSpans=nodes(h.render()).filter(n=>n.type==='Text'&&/text-highlight-(matched|added)-foreground/.test(n.props.className??''));
+  assert.ok(updatedSpans.some(n=>text(n)==='TCP/IP'&&n.props.className.includes('bg-highlight-matched')));
+  assert.ok(updatedSpans.some(n=>text(n)==='VLAN'&&n.props.className.includes('bg-highlight-added')));
+  props.keywords=['English communication (written and spoken)'];props.jobDescription='English communication (written and spoken)';h.render();
+  assert.ok(nodes(h.render()).some(n=>n.type==='Text'&&text(n)==='English communication (written and spoken)'&&n.props.className?.includes('bg-highlight-added')),'new engine terms recompute highlights');
+  props.history=null;h.render();assert.doesNotMatch(h.getText(),/Some keyword history|No verified keyword|Retry highlights/);
+  let retries=0;props.historyError=true;props.onRetry=()=>{retries++;};h.render();
+  assert.doesNotMatch(h.getText(),/Only verified occurrences/);assert.match(h.getText(),/Complete custom paragraph/);
+  h.button('Retry highlights').props.onPress();assert.equal(retries,1);
   h.dispose();
 });
 
