@@ -33,9 +33,13 @@ export default function JobMatchScreen() {
   const revisionKey = JSON.stringify([session?.user.id, document?.tailoring_id, document?.revision]);
   const needsAnalysis = !editor.analysis?.score || editor.analysis.status !== "current" || editor.analysis.revision !== document?.revision;
   // Wait for autosaves rather than asking scoring to flush in-progress editor text.
-  const ready = !!session?.user.id && !!document && !editor.loading && !editor.error && editor.saveState === "saved";
+  const ready = !!session?.user.id && !!document && !editor.loading && !editor.error && !editor.refreshError && editor.saveState === "saved";
   const refreshMatch = useCallback(async () => {
     if (request.current || editor.analysisLoading) return;
+    if (editor.refreshError) {
+      await editor.reload();
+      return;
+    }
     const token = Symbol();
     request.current = token;
     attempted.current.add(revisionKey);
@@ -44,7 +48,7 @@ export default function JobMatchScreen() {
     try { await editor.refreshAnalysis(); }
     catch { setRefreshError(true); }
     finally { if (request.current === token) { request.current = null; setRefreshing(false); } }
-  }, [editor.analysisLoading, editor.refreshAnalysis, revisionKey]);
+  }, [editor.analysisLoading, editor.refreshError, editor.refreshAnalysis, editor.reload, revisionKey]);
   const autoPending = ready && needsAnalysis && !attempted.current.has(revisionKey);
   useEffect(() => {
     if (!ready || request.current) return;
@@ -63,6 +67,7 @@ export default function JobMatchScreen() {
     editor.updateWorkspace({ tool: "content", trayOpen: true, panelHeight: workspace.panelHeight || 190, sectionKey: found.key, fieldPath: null, fieldLabel: null });
     back();
   };
+  const recoveryMessage = [editor.refreshError, editor.problem].filter(Boolean).join(" ");
   return <AppScreen>
     <View className="h-14 native:h-[56px] shrink-0 flex-row items-center gap-1 border-b border-border bg-background px-2">
       <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 native:h-[44px] native:w-[44px]" accessibilityLabel="Back to Edit Resume" onPress={back}><LucideIcon name="ChevronLeft" size={22} className="text-foreground" /></Button>
@@ -75,13 +80,16 @@ export default function JobMatchScreen() {
         <Button variant="outline" onPress={back}><Text>Back to Edit Resume</Text></Button>
       </View>
       : <View className="flex-1 bg-background">
-        {editor.problem ? <View className="gap-2 bg-background px-4 py-3"><Notice tone="error" message={editor.problem} />{editor.saveState !== "conflict" ? <Button variant="outline" size="sm" className="min-h-11 native:min-h-[44px]" onPress={() => void editor.flush()}><Text>Retry saving</Text></Button> : null}</View> : null}
-        {editor.saveState === "conflict" ? <View className="gap-2 border-b border-border bg-background px-4 py-3"><Text className="text-caption text-foreground">A newer version is saved. Choose how to continue; your layout trial stays here.</Text><View className="flex-row gap-2"><Button className="min-h-11 native:min-h-[44px] flex-1" onPress={() => void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" className="min-h-11 native:min-h-[44px] flex-1" onPress={() => void editor.resolveConflict("server")}><Text>Use saved content</Text></Button></View></View> : null}
+        {recoveryMessage ? <View className="gap-2 bg-background px-4 py-3">
+          <Notice tone="error" message={recoveryMessage} />
+          {editor.refreshError || editor.saveState !== "conflict" ? <Button variant="outline" size="sm" className="min-h-11 native:min-h-[44px]" onPress={() => void (editor.refreshError ? editor.reload() : editor.flush())}><Text>{editor.refreshError ? "Retry refresh" : "Retry saving"}</Text></Button> : null}
+        </View> : null}
+        {editor.saveState === "conflict" ? <View className="gap-2 border-b border-border bg-background px-4 py-3"><View className="flex-row gap-2"><Button className="min-h-11 native:min-h-[44px] flex-1" onPress={() => void editor.resolveConflict("local")}><Text>Keep my edits</Text></Button><Button variant="outline" className="min-h-11 native:min-h-[44px] flex-1" onPress={() => void editor.resolveConflict("server")}><Text>Use saved version</Text></Button></View></View> : null}
         <View accessibilityRole="tablist" className="flex-row border-b border-border bg-background px-3">
           {([["overview", "Overview"], ["highlights", "Keyword Highlights"]] as const).map(([key, label]) => <Pressable key={key} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: workspace.matchSection === key }} onPress={() => editor.updateWorkspace({ matchSection: key })} className={cn("min-h-11 native:min-h-[44px] flex-1 items-center justify-center border-b-2 bg-background px-1", workspace.matchSection === key ? "border-primary" : "border-transparent")}><Text className={cn("text-caption", workspace.matchSection === key ? "text-primary" : "text-muted-foreground")}>{label}</Text></Pressable>)}
         </View>
         <ScrollView className="flex-1 bg-background" contentContainerClassName="px-4 pt-3" contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) }} keyboardShouldPersistTaps="handled">
-          <JobMatch error={refreshError ? "Couldn’t update your match. Try again." : editor.analysisError} savedResume={document.resume} history={keywordHistory.history} historyLoading={keywordHistory.historyLoading} historyError={keywordHistory.historyError} onRetryHistory={keywordHistory.retryHistory} template={editor.layoutDraft?.template ?? editor.layout?.template ?? document.layout?.template} section={workspace.matchSection} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved"} loading={autoPending || refreshing || editor.analysisLoading} jobDescription={document.job.description} onRefresh={() => void refreshMatch()} onEdit={openSection} />
+          <JobMatch error={refreshError ? "Couldn’t update your match. Try again." : editor.analysisError} savedResume={document.resume} history={keywordHistory.history} historyLoading={keywordHistory.historyLoading} historyError={keywordHistory.historyError} onRetryHistory={keywordHistory.retryHistory} template={editor.layoutDraft?.template ?? editor.layout?.template ?? document.layout?.template} section={workspace.matchSection} analysis={editor.analysis} revision={document.revision} dirty={editor.saveState !== "saved" || !!editor.refreshError} loading={autoPending || refreshing || editor.analysisLoading} jobDescription={document.job.description} onRefresh={() => void refreshMatch()} onEdit={openSection} />
         </ScrollView>
       </View>}
     <AccountSheet visible={showSignIn} onClose={() => { setShowSignIn(false); void editor.reload(); }} />

@@ -376,6 +376,69 @@ test('iOS preview downloads the same saved artifact and pins a new acknowledged 
  });
 });
 
+test("Retry refresh loads the newest cached CV in Edit Resume and Job Match without writing", async (t) => {
+  for (const file of ["app/cv-editor/[id].tsx", "app/cv-editor/[id]/job-match.tsx"]) {
+    const h = harness();
+    t.after(() => h.dispose());
+    const cached = makeDocument();
+    const latest = {
+      ...cached,
+      revision: 7,
+      resume: { ...cached.resume, summary: "Updated on another device" },
+      analysis: { status: "current", revision: 7, score: { overall_score: 80, sub_scores: {} }, total_keywords: 0, matched_count: 0 },
+    };
+    let reads = 0;
+    let writes = 0;
+    let analyses = 0;
+    let offline = true;
+    h.open(file, {
+      "@react-native-async-storage/async-storage": {
+        __esModule: true,
+        default: {
+          getItem: async () => JSON.stringify({ version: 1, document: cached, resume: cached.resume, confirmedSkills: [], pending: null, dirty: false }),
+          setItem: async () => {},
+        },
+      },
+      "./api": {
+        getEditorDocument: async () => {
+          reads++;
+          if (offline) throw Error("Network unavailable");
+          return copy(latest);
+        },
+        saveEditorDocument: async () => { writes++; },
+        recalculateEditorAnalysis: async () => { analyses++; },
+      },
+    });
+    await h.pump();
+    assert.equal(reads, 1);
+    assert.match(h.find(node => node.type === "Notice").props.message, /device copy/);
+    if (file.endsWith("job-match.tsx")) {
+      assert.equal(h.find(node => node.type === "JobMatch").props.revision, 6);
+    } else {
+      assert.equal(h.button("Open PDF preview").props.disabled, true);
+    }
+
+    offline = false;
+    const retry = h.button("Retry refresh");
+    assert.ok(retry, file);
+    retry.props.onPress();
+    retry.props.onPress();
+    await h.pump();
+    assert.equal(reads, 2);
+    assert.equal(writes, 0);
+    assert.equal(analyses, 0);
+    assert.equal(h.button("Retry refresh"), undefined);
+    if (file.endsWith("job-match.tsx")) {
+      const match = h.find(node => node.type === "JobMatch").props;
+      assert.equal(match.revision, 7);
+      assert.equal(match.savedResume.summary, latest.resume.summary);
+    } else {
+      assert.equal(h.find(node => node.type === "CvPreviewSurface").props.resume.summary, latest.resume.summary);
+      assert.match(h.getText(), /PDF v7/);
+    }
+  }
+});
+
 test('failed automatic PDF update retains the previous file and exposes retry without navigation',async(t)=>{
  const h=harness();t.after(()=>h.dispose());const document=makeDocument();let retries=0;
  h.pdf={pdf:{uri:'file:///last.pdf',revision:6},ready:false,saveError:'Unable to save. Your edits are kept.',retry:()=>retries++};

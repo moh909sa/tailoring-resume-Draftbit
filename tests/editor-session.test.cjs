@@ -74,6 +74,88 @@ test('restored pending replay cannot replace a newer server revision',async()=>{
   const h=harness({raw,server:doc(3,'Other device'),save:async()=>doc(2,'Old accepted edit')});await h.session.restore();await h.session.flush();
   assert.equal(h.session.snapshot.saveState,'conflict');assert.equal(h.session.snapshot.document.revision,3);assert.equal(h.session.snapshot.resume.summary,'My next edit');h.session.dispose();
 });
+test("an unresolved conflict survives another offline launch and can only be saved by an explicit choice", async (t) => {
+  const local = { summary: "Pending edit" };
+  const original = doc();
+  const remote = doc(2, "Saved on another device");
+  const raw = JSON.stringify({ version: 1, document: original, resume: local, confirmedSkills: [], pending: null, dirty: true });
+  const first = harness({ raw, server: remote });
+  t.after(() => first.session.dispose());
+  await first.session.restore();
+  assert.equal(first.session.snapshot.saveState, "conflict");
+  assert.equal(first.session.snapshot.document.revision, 2);
+
+  const reopened = harness({
+    raw: first.stored,
+    server: remote,
+    load: async () => {
+      if (offline) throw Error("Network unavailable");
+      return copy(remote);
+    },
+  });
+  let offline = true;
+  t.after(() => reopened.session.dispose());
+  await reopened.session.restore();
+  assert.equal(reopened.session.snapshot.saveState, "conflict");
+  assert.deepEqual(reopened.session.snapshot.resume, local);
+
+  offline = false;
+  await reopened.session.refresh();
+  assert.equal(reopened.session.snapshot.saveState, "conflict");
+  assert.equal(await reopened.session.flush(), null);
+  assert.equal(reopened.mutations.length, 0);
+  await Promise.all([
+    reopened.session.resolveConflict("local"),
+    reopened.session.resolveConflict("local"),
+  ]);
+  assert.equal(reopened.mutations.length, 1);
+  assert.equal(reopened.mutations[0].expected_revision, 2);
+  assert.deepEqual(reopened.remote.resume, local);
+});
+
+test("an older draft without conflict history can be reviewed without overwriting the saved CV", async (t) => {
+  const remote = doc(2, "Latest saved summary");
+  const draft = { summary: "Older draft" };
+  const raw = JSON.stringify({ version: 1, document: remote, resume: draft, confirmedSkills: [], pending: null, dirty: true });
+  const h = harness({ raw, server: remote });
+  t.after(() => h.session.dispose());
+  await h.session.restore();
+
+  assert.deepEqual(h.session.snapshot.resume, draft);
+  assert.equal(h.session.snapshot.saveState, "conflict");
+  assert.equal(await h.session.flush(), null);
+  await h.session.resolveConflict("server");
+  assert.equal(h.session.snapshot.resume.summary, remote.resume.summary);
+  assert.equal(h.mutations.length, 0);
+});
+
+test("foreground refresh replaces a read that was still aborting", async (t) => {
+  let release;
+  let firstSignal;
+  let reads = 0;
+  const h = harness({
+    load: async (signal) => {
+      reads++;
+      if (reads === 2) {
+        firstSignal = signal;
+        await new Promise(resolve => { release = resolve; });
+      }
+      return reads === 3 ? doc(2, "Latest after foreground") : doc();
+    },
+  });
+  t.after(() => h.session.dispose());
+  await h.session.restore();
+  const aborting = h.session.refresh();
+  h.session.setActive(false);
+  assert.equal(firstSignal.aborted, true);
+  h.session.setActive(true);
+  release();
+  await aborting;
+  await pause();
+  assert.equal(reads, 3);
+  assert.equal(h.session.snapshot.document.revision, 2);
+});
+
 test('corrupt pending backup cannot leave a loaded server document without editable content',async()=>{
   const raw=JSON.stringify({version:1,document:doc(),resume:{summary:'Unsynced'},confirmedSkills:[],pending:{expected_revision:1,mutation_id:'broken',resume:null,confirmed_skills:null},dirty:true});
   const h=harness({raw});await h.session.restore();assert.equal(h.session.snapshot.resume.summary,'Original');assert.equal(h.session.snapshot.saveState,'saved');h.session.dispose();

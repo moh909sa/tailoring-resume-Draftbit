@@ -82,6 +82,88 @@ test('remote refresh preserves a local layout trial without creating a content c
  h.session.update({...h.session.snapshot.resume,summary:'Latest text'});await h.session.refreshAnalysis();assert.equal(h.saves[0].layout.template,'swiss-single');assert.equal(h.analyses.length,1);assert.equal(h.session.snapshot.layoutDraft.template,'clean');
 });
 
+test("PDF preparation with a clean cached CV cannot send its old layout after refresh", async (t) => {
+  const h = harness();
+  t.after(() => h.session.dispose());
+  await h.session.restore();
+  let release;
+  h.deps.load = async () => {
+    await new Promise(resolve => { release = resolve; });
+    return clone(h.remote);
+  };
+
+  const refresh = h.session.refresh();
+  const pdf = h.session.saveForPdf();
+  h.remote = { ...h.remote, revision: 5, layout: { ...layout(), pageSize: "LETTER" } };
+  release();
+  await refresh;
+  const saved = await pdf;
+
+  assert.equal(h.saves.length, 0);
+  assert.equal(saved.revision, 5);
+  assert.equal(saved.layout.pageSize, "LETTER");
+});
+
+test("a recovered layout trial needs a choice before it replaces formatting saved elsewhere", async (t) => {
+  for (const mode of ["local", "server"]) {
+    const h = harness();
+    t.after(() => h.session.dispose());
+    await h.session.restore();
+    const trial = { ...layout(), template: "modern" };
+    h.session.updateLayoutDraft(trial);
+    h.remote = { ...h.remote, revision: 5, layout: { ...layout(), pageSize: "LETTER" }, resume: { ...h.remote.resume, summary: "Other device" } };
+    await h.session.refresh();
+
+    const reopened = new CvEditorSession(h.deps);
+    t.after(() => reopened.dispose());
+    await reopened.restore();
+    assert.equal(await reopened.saveForPdf(), null);
+    assert.equal(reopened.snapshot.saveState, "conflict");
+    assert.deepEqual(reopened.snapshot.layoutDraft, trial);
+    assert.equal(h.saves.length, 0);
+
+    const afterConflict = new CvEditorSession(h.deps);
+    t.after(() => afterConflict.dispose());
+    await afterConflict.restore();
+    assert.equal(afterConflict.snapshot.saveState, "conflict");
+    assert.equal(await afterConflict.saveForPdf(), null);
+    assert.equal(h.saves.length, 0);
+
+    await afterConflict.resolveConflict(mode);
+    const saved = await afterConflict.saveForPdf();
+    assert.equal(saved.resume.summary, "Other device");
+    assert.deepEqual(saved.layout, mode === "local" ? trial : h.remote.layout);
+    assert.equal(saved.layout.pageSize, mode === "local" ? "A4" : "LETTER");
+    assert.equal(h.saves.length, mode === "local" ? 1 : 0);
+  }
+});
+
+test("an older layout draft without its original base is kept for explicit review", async (t) => {
+  const trial = { ...layout(), template: "modern" };
+  const latest = { ...document(), layout: { ...layout(), pageSize: "LETTER" } };
+  const raw = JSON.stringify({
+    version: 1,
+    document: latest,
+    resume: latest.resume,
+    confirmedSkills: [],
+    pending: null,
+    dirty: false,
+    layoutDraft: trial,
+    layoutDraftDirty: true,
+  });
+  const h = harness({ raw });
+  t.after(() => h.session.dispose());
+  h.remote = latest;
+  await h.session.restore();
+
+  assert.deepEqual(h.session.snapshot.layoutDraft, trial);
+  assert.equal(await h.session.saveForPdf(), null);
+  assert.equal(h.saves.length, 0);
+  await h.session.resolveConflict("local");
+  assert.deepEqual((await h.session.saveForPdf()).layout, trial);
+  assert.equal(h.saves.length, 1);
+});
+
 test('a damaged layout trial never discards a recoverable content mutation',async(t)=>{
  const doc=document(),pending={expected_revision:4,mutation_id:'saved-receipt',resume:{...doc.resume,summary:'Recovered'},layout:doc.layout,confirmed_skills:[]};
  const raw=JSON.stringify({version:1,document:doc,resume:pending.resume,layout:doc.layout,confirmedSkills:[],dirty:true,pending,layoutDraft:{template:'damaged'},layoutDraftDirty:true});

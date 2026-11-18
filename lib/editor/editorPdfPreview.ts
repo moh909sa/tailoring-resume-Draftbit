@@ -40,9 +40,10 @@ export class EditorPdfPreview {
     const ownerChanged=previous?.ownerId!==input?.ownerId||previous?.id!==input?.id;
     const changed=ownerChanged||this.signature!==signature||previous?.editing!==input?.editing;
     const revisionChanged=previous?.revision!==input?.revision;
+    const conflictResolved = previous?.saveState === "conflict" && input?.saveState !== "conflict";
     const formattingOnly=!!previous && !!input && previous.editing===input.editing && JSON.stringify(previous.layout)!==JSON.stringify(input.layout) && JSON.stringify([previous.resume,previous.skills])===JSON.stringify([input.resume,input.skills]);
     this.input=input;this.signature=signature;
-    if(!changed&&(!revisionChanged||this.saving||this.acknowledged?.revision===input?.revision))return;
+    if(!changed&&!conflictResolved&&(!revisionChanged||this.saving||this.acknowledged?.revision===input?.revision))return;
     this.stop();this.saveError=null;this.saving=false;
     if(ownerChanged){this.timing?.cancel();this.timing=null;this.acknowledged=null;this.renderedSignature=null;}
     this.live.update(input?{ownerId:input.ownerId,id:input.id,revision:input.revision,ready:false}:null);
