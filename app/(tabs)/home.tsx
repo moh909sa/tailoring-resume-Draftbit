@@ -4,8 +4,10 @@ import { AppScreen } from "@/components/layout/AppScreen";
 import { Text } from "@/components/ui/text";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import LucideIcon from "@/lib/icons/LucideIcon";
+import { useAuth } from "@/lib/auth/AuthProvider";
 
 export default function HomeScreen() {
+  const { session } = useAuth();
   return (
     <AppScreen>
       <View className="flex-row items-center justify-between px-6 py-3">
@@ -23,6 +25,18 @@ export default function HomeScreen() {
         <ThemeToggle />
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="px-6 pb-8">
+        {session?.user ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="My Account"
+            onPress={() => router.navigate("/account")}
+            className="mt-2 min-h-12 flex-row items-center gap-3 rounded-xl border border-border bg-card px-4 active:bg-secondary web:focus-visible:outline-none web:focus-visible:ring-2 web:focus-visible:ring-ring"
+          >
+            <LucideIcon name="UserRound" size={19} className="text-primary" />
+            <Text className="flex-1 text-h6 text-foreground">My Account</Text>
+            <LucideIcon name="ChevronRight" size={18} className="text-muted-foreground" />
+          </Pressable>
+        ) : null}
         <View className="mb-8 mt-7 gap-3">
           <Text
             accessibilityRole="header"

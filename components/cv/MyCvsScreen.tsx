@@ -23,7 +23,7 @@ import { AccountSheet } from "@/components/cv/AccountSheet";
 import LucideIcon from "@/lib/icons/LucideIcon";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useMyCv } from "@/lib/cv/useMyCv";
-import { supabase } from "@/lib/supabase";
+import { signOutOfAccount } from "@/lib/auth/accountActions";
 import { useTheme } from "@/theming/ThemeProvider";
 
 export default function MyCvsScreen() {
@@ -57,12 +57,12 @@ export default function MyCvsScreen() {
   }
 
   async function signOut() {
-    if (!supabase || signingOut || busy || cv.deletingId) return;
+    const ownerId = session?.user.id;
+    if (!ownerId || signingOut || busy || cv.deletingId) return;
     setSigningOut(true);
     setSignOutError(null);
     try {
-      const { error } = await supabase.auth.signOut({ scope: "local" });
-      if (error) throw error;
+      await signOutOfAccount(ownerId);
       setShowSignIn(false);
     } catch (error) {
       setSignOutError(

@@ -24,7 +24,7 @@ Server-only Supabase secrets belong on Railway, never in the mobile app.
 
 ## Authentication and uploads
 
-My CVs uses a shared account sheet for sign-in, sign-up, confirmation resend and Forgot password. Supabase requires email confirmation for new accounts. Email links return to the app or browser that requested them. A password reset opens a temporary session used only to change the password, then prompts for sign-in. Signed-in sessions persist between launches, and the app checks them again when it comes to the foreground.
+Signed-in users can open My Account at the top of Home to see their login email, change their password with current-password verification, and sign out of this device. Signed-out screens use the shared form for sign-in, sign-up, confirmation resend and Forgot password. Supabase requires email confirmation for new accounts. Email links return to the app or browser that requested them. A password reset opens a temporary session used only to change the password, then prompts for sign-in. Signed-in sessions persist between launches, and the app checks them again when it comes to the foreground.
 
 In the existing Supabase project, add these exact entries under **Authentication → URL Configuration → Redirect URLs** for native builds.
 
