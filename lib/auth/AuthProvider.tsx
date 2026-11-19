@@ -1,14 +1,11 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { AppState, Platform } from "react-native";
-import type { Session } from "@supabase/supabase-js";
+import { isAuthRetryableFetchError, type Session } from "@supabase/supabase-js";
 import { authConfigurationError, supabase } from "@/lib/supabase";
 
 type AuthState = { session: Session | null; loading: boolean; error: string | null };
-const AuthContext = createContext<AuthState>({
-  session: null,
-  loading: true,
-  error: null,
-});
+const AuthContext = createContext<AuthState>({ session: null, loading: true, error: null });
+const restoreMessage = "Couldn’t restore your sign-in. Check your connection or sign in again.";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -21,44 +18,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const client = supabase;
     if (!client) return;
     let active = true;
-    let receivedAuthEvent = false;
-    const {
-      data: { subscription },
-    } = client.auth.onAuthStateChange((_event, session) => {
-      receivedAuthEvent = true;
-      if (active) setState({ session, loading: false, error: null });
-    });
-    void client.auth
-      .getSession()
-      .then(({ data, error }) => {
-        if (active && !receivedAuthEvent) {
-          setState({ session: data.session, loading: false, error: error?.message ?? null });
-        }
-      })
-      .catch(() => {
-        if (active)
-          setState({
-            session: null,
-            loading: false,
-            error: "Unable to restore your sign-in. Please sign in again.",
-          });
-      });
+    let authRevision = 0;
+    let restoring = false;
+    let restoreAgain = false;
 
-    const appState =
-      Platform.OS !== "web"
-        ? AppState.addEventListener("change", (nextState) => {
-            if (nextState === "active") client.auth.startAutoRefresh();
-            else client.auth.stopAutoRefresh();
-          })
-        : null;
-    if (Platform.OS !== "web" && AppState.currentState === "active") {
-      client.auth.startAutoRefresh();
+    const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
+      // The explicit session read owns initialization and its error state.
+      if (!active || event === "INITIAL_SESSION") return;
+      authRevision++;
+      setState({ session, loading: false, error: null });
+    });
+
+    async function restore() {
+      if (!active || !client) return;
+      if (restoring) {
+        restoreAgain = true;
+        return;
+      }
+      restoring = true;
+      const revision = authRevision;
+      try {
+        const { data, error } = await client.auth.getSession();
+        if (!active || revision !== authRevision) return;
+        if (isAuthRetryableFetchError(error)) {
+          setState(current => ({ ...current, loading: false, error: restoreMessage }));
+        } else {
+          setState({ session: data.session, loading: false, error: null });
+        }
+      } catch {
+        if (active && revision === authRevision) {
+          setState(current => ({ ...current, loading: false, error: restoreMessage }));
+        }
+      } finally {
+        restoring = false;
+        if (restoreAgain) {
+          restoreAgain = false;
+          void restore();
+        }
+      }
     }
+
+    const native = Platform.OS !== "web";
+    const appState = native ? AppState.addEventListener("change", nextState => {
+      if (nextState === "active") {
+        client.auth.startAutoRefresh();
+        void restore();
+      } else {
+        restoreAgain = false;
+        client.auth.stopAutoRefresh();
+      }
+    }) : null;
+    if (native) {
+      if (AppState.currentState === "active") client.auth.startAutoRefresh();
+      else client.auth.stopAutoRefresh();
+    }
+    void restore();
+
     return () => {
       active = false;
       subscription.unsubscribe();
       appState?.remove();
-      if (Platform.OS !== "web") client.auth.stopAutoRefresh();
+      if (native) client.auth.stopAutoRefresh();
     };
   }, []);
 

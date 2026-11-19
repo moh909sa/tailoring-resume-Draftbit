@@ -24,7 +24,14 @@ Server-only Supabase secrets belong on Railway, never in the mobile app.
 
 ## Authentication and uploads
 
-My CVs contains the existing sign-in/account creation form in an account sheet. Supabase currently requires email confirmation for new accounts. Confirm the account by email, then return to sign in. Sessions persist between launches; native refresh follows app foreground state.
+My CVs uses a shared account sheet for sign-in, sign-up, confirmation resend and Forgot password. Supabase requires email confirmation for new accounts. Email links return to the app or browser that requested them. A password reset opens a temporary session used only to change the password, then prompts for sign-in. Signed-in sessions persist between launches, and the app checks them again when it comes to the foreground.
+
+In the existing Supabase project, add these exact entries under **Authentication → URL Configuration → Redirect URLs** for native builds.
+
+- `resume-tailoring://auth/confirm-email`
+- `resume-tailoring://auth/reset-password`
+
+For each web origin where email links should work, also add the exact HTTPS URLs ending in `/auth/confirm-email` and `/auth/reset-password`. Keep the **Confirm signup** and **Reset password** email templates pointed at `{{ .ConfirmationURL }}`, and use the latest email on the same app installation or browser profile that requested it. Configure [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp) for delivery to customers. Keep SMTP credentials in Supabase and turn off link tracking for authentication emails. Test app-link opening in an iPhone build installed through TestFlight. [Supabase redirect settings](https://supabase.com/docs/guides/auth/redirect-urls)
 
 Native iOS uses the system Files picker and uploads the selected URI with its original filename and canonical MIME type. Web uses the browser picker and File object. Railway processes uploads synchronously, so the app distinguishes sending the file from waiting for processing. It reloads the list even after an error because an original may already have been saved.
 

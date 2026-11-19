@@ -30,7 +30,7 @@ module.exports = {
 
 
 
-  scheme: "new-app",
+  scheme: ["new-app", "resume-tailoring"],
   slug: "new-app",
   splash: {
     image: "./assets/images/splash.png",
