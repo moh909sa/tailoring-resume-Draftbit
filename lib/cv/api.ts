@@ -245,7 +245,7 @@ async function tailoringRequest<T>(
   path: string,
   signal: AbortSignal,
   parse: (value: unknown) => T,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT",
   body?: unknown,
   timeoutMs?: number,
 ): Promise<T> {
@@ -298,6 +298,36 @@ async function tailoringRequest<T>(
     }
   }
   throw new CvApiError("Please sign in again.", 401);
+}
+
+export type AiConsent = {
+  version: string;
+  recipients: string[];
+  retention: string;
+  accepted: boolean | null;
+};
+
+function parseAiConsent(value: unknown): AiConsent {
+  const notice = value as Partial<AiConsent> | null;
+  if (
+    typeof notice?.version !== "string" ||
+    !/^[a-f0-9]{64}$/.test(notice.version) ||
+    !Array.isArray(notice.recipients) ||
+    !notice.recipients.length ||
+    !notice.recipients.every((name) => typeof name === "string" && name.trim()) ||
+    typeof notice.retention !== "string" ||
+    !notice.retention.trim() ||
+    (notice.accepted !== null && typeof notice.accepted !== "boolean")
+  ) throw new Error("The tailoring service returned an invalid AI disclosure.");
+  return { version: notice.version, recipients: notice.recipients, retention: notice.retention, accepted: notice.accepted };
+}
+
+export function getAiConsent(ownerId: string, signal: AbortSignal) {
+  return tailoringRequest(ownerId, "/ai-consent", signal, parseAiConsent, "GET");
+}
+
+export function saveAiConsent(ownerId: string, version: string, accepted: boolean, signal: AbortSignal) {
+  return tailoringRequest(ownerId, "/ai-consent", signal, parseAiConsent, "PUT", { version, accepted }, 30000);
 }
 
 export function startTailoringJob(

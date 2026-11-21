@@ -1,3 +1,4 @@
+import { useAiConsent } from "@/lib/aiConsent/AiConsentProvider";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 import { AppScreen } from "@/components/layout/AppScreen";
@@ -28,6 +29,7 @@ import { useTheme } from "@/theming/ThemeProvider";
 
 export default function MyCvsScreen() {
   const { theme } = useTheme();
+  const { withConsent } = useAiConsent();
   const { session, loading: authLoading, error: authError } = useAuth();
   const cv = useMyCv();
   const [showSignIn, setShowSignIn] = useState(false);
@@ -43,7 +45,7 @@ export default function MyCvsScreen() {
       setShowSignIn(true);
       return;
     }
-    void cv.upload();
+    withConsent(cv.upload);
   }
 
   function requestDelete(resume: Resume) {
@@ -106,7 +108,7 @@ export default function MyCvsScreen() {
                 disabled={!!cv.deletingId || busy || signingOut}
                 deleting={cv.deletingId === item.id}
                 onDelete={() => requestDelete(item)}
-                onRetry={item.processing_status === "failed" || item.recovery_required ? () => void cv.retryProcessing(item.id) : undefined}
+                onRetry={item.processing_status === "failed" || item.recovery_required ? () => withConsent(() => cv.retryProcessing(item.id)) : undefined}
               />
             }
           />

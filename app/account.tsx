@@ -1,3 +1,4 @@
+import { useAiConsent } from "@/lib/aiConsent/AiConsentProvider";
 import { useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { router } from "expo-router";
@@ -19,6 +20,7 @@ function goBack() {
 
 function AccountDetails({ ownerId, email }: { ownerId: string; email?: string }) {
   const [editing, setEditing] = useState(false);
+  const { manageConsent } = useAiConsent();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -124,6 +126,9 @@ function AccountDetails({ ownerId, email }: { ownerId: string; email?: string })
           <LucideIcon name="KeyRound" size={19} className="text-primary" /><Text>Change password</Text>
         </Button>
       )}
+      <Button variant="outline" className="min-h-12 justify-start gap-3 rounded-xl" disabled={!!busy} onPress={manageConsent}>
+        <LucideIcon name="Shield" size={19} className="text-primary" /><Text>AI data sharing</Text>
+      </Button>
       <Button variant="outline" className="min-h-12 justify-start gap-3 rounded-xl" disabled={!!busy} onPress={() => void signOut()}>
         <LucideIcon name="LogOut" size={19} className="text-destructive" />
         <Text className="text-destructive">{busy === "signOut" ? "Signing out…" : "Sign out"}</Text>

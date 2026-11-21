@@ -1,4 +1,5 @@
 import { router, usePathname, useRootNavigationState, useGlobalSearchParams } from "expo-router";
+import { AiConsentProvider } from "@/lib/aiConsent/AiConsentProvider";
 import { TailoringProvider, useTailoring } from "@/lib/tailoring/TailoringProvider";
 import "@/global.css";
 import "@/appearance-polyfill";
@@ -213,9 +214,11 @@ export default function RootLayout() {
       themes={[lightTheme, darkTheme]}
     >
       <AuthProvider>
-        <TailoringProvider>
-          <RootContent />
-        </TailoringProvider>
+        <AiConsentProvider>
+          <TailoringProvider>
+            <RootContent />
+          </TailoringProvider>
+        </AiConsentProvider>
       </AuthProvider>
     </ThemeProvider>
   );

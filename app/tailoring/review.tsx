@@ -1,3 +1,4 @@
+import { useAiConsent } from "@/lib/aiConsent/AiConsentProvider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, BackHandler, FlatList, View } from "react-native";
@@ -69,6 +70,7 @@ type WizardItem = { connected?: string } & (
 
 export default function TailoringReviewScreen() {
   const run = useTailoring();
+  const { withConsent } = useAiConsent();
   const { session, loading: authLoading } = useAuth();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -148,7 +150,9 @@ export default function TailoringReviewScreen() {
     });
   }
   function regenerate() {
-    if (run.input && run.start(run.input)) router.replace("/tailoring/processing");
+    withConsent(() => {
+      if (run.input && run.start(run.input)) router.replace("/tailoring/processing");
+    });
   }
 
   const routeOptions = (
@@ -675,7 +679,7 @@ export default function TailoringReviewScreen() {
         {step === 0 ? (
           <>
             <Button
-              onPress={run.applyKeywords}
+              onPress={() => withConsent(run.applyKeywords)}
               disabled={blocked || !pendingKeywordCount}
               accessibilityLabel={`Apply Keywords (${pendingKeywordCount})`}
               className="h-12 gap-2 rounded-2xl"

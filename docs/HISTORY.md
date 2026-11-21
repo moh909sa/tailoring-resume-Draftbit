@@ -1,5 +1,7 @@
 # Product decisions
 
+- Mobile AI processing requires an explicit account-level choice tied to the current provider disclosure. Saved CVs stay available after refusal.
+
 - Confirmation and password reset links use device-bound verification, with a temporary password reset session isolated from the signed-in CV account.
 
 - Original CV storage and AI processing are separate: a processing failure never hides a saved original.

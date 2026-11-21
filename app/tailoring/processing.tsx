@@ -1,3 +1,4 @@
+import { useAiConsent } from "@/lib/aiConsent/AiConsentProvider";
 import { useEffect, useState } from "react";
 import { router, Stack } from "expo-router";
 import { ActivityIndicator, BackHandler, ScrollView, View } from "react-native";
@@ -14,6 +15,7 @@ import LucideIcon from "@/lib/icons/LucideIcon";
 
 export default function TailoringProcessingScreen() {
   const run = useTailoring();
+  const { withConsent } = useAiConsent();
   const { theme } = useTheme();
   const running = run.status === "running";
   const [now, setNow] = useState(Date.now());
@@ -86,7 +88,7 @@ export default function TailoringProcessingScreen() {
                 : "Your original CV is unchanged."}
             </Text>
             <Button
-              onPress={run.input ? run.retry : run.recoverJob}
+              onPress={run.input ? () => withConsent(run.retry) : run.recoverJob}
               disabled={run.jobRecovering}
               className="h-14 rounded-2xl"
             >
@@ -147,7 +149,7 @@ export default function TailoringProcessingScreen() {
                 {run.jobStatus === "unknown" && run.input ? (
                   <Button
                     variant="ghost"
-                    onPress={run.retry}
+                    onPress={() => withConsent(run.retry)}
                     disabled={run.jobRecovering}
                     className="h-12 rounded-2xl"
                   >

@@ -218,6 +218,7 @@ test("Tailor opens saved CVs in Edit Resume and keeps unsaved Continue review wi
     const run={input,tailoringId:TAILORED,status:'success',saved,hydrating:false,jobRecovering:false,jobConnectionError:null,start:()=>{starts++;return true;}};
     h.open('app/(tabs)/tailor.tsx',{
       '@/lib/tailoring/TailoringProvider':{useTailoring:()=>run},
+      '@/lib/aiConsent/AiConsentProvider':{useAiConsent:()=>({withConsent:start=>start()})},
       '@/lib/tailoring/useTailorForm':{useTailorForm:()=>({form:{selectedId:SOURCE,description:input.jobDescription},loading:false,saving:false,error:null,update:()=>{}})},
       '@/lib/cv/useMyCv':{useMyCv:()=>({resumes:[{id:SOURCE,original_filename:'Original.pdf',processing_status:'ready',recovery_required:false}],loading:false})},
       '@/components/cv/CvSelectionSheet':{CvSelectionSheet:'SelectionSheet'},

@@ -63,6 +63,7 @@ function screens(actions) {
     "@/lib/icons/LucideIcon": { __esModule: true, default: "Icon" },
     "@/lib/auth/AuthProvider": { useAuth: () => ({ session: user ? { user } : null, loading, error: null }) },
     "@/lib/auth/accountActions": actions,
+    "@/lib/aiConsent/AiConsentProvider": { useAiConsent: () => ({ manageConsent: () => {} }) },
     "@/lib/auth/emailLinks": { minimumPasswordLength: 8, passwordHint: "Use at least 8 characters." },
   };
   for (const [file, name] of [

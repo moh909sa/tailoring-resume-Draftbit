@@ -204,6 +204,7 @@ function screenHarness() {
       useAuth: () => ({ session: { user: { id: "test-owner" } }, loading: false }),
     },
     "@/lib/tailoring/TailoringProvider": { useTailoring: () => run },
+    "@/lib/aiConsent/AiConsentProvider": { useAiConsent: () => ({ withConsent: (start) => start() }) },
   };
   const Screen = loadSource("app/tailoring/review.tsx", mocks).default;
   return {

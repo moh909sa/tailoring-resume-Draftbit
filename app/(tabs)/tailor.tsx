@@ -1,3 +1,4 @@
+import { useAiConsent } from "@/lib/aiConsent/AiConsentProvider";
 import { useTailoring } from "@/lib/tailoring/TailoringProvider";
 import { useEffect, useState } from "react";
 import { router } from "expo-router";
@@ -24,6 +25,7 @@ import { useTailorForm } from "@/lib/tailoring/useTailorForm";
 
 export default function TailorScreen() {
   const { session, loading: authLoading, error: authError } = useAuth();
+  const { withConsent } = useAiConsent();
   const { theme } = useTheme();
   const cv = useMyCv();
   const tailoring = useTailoring();
@@ -59,14 +61,13 @@ export default function TailorScreen() {
       return;
     }
     if (!canTailor || !selected) return;
-    if (
-      tailoring.start({
+    withConsent(() => {
+      if (tailoring.start({
         resumeId: selected.id,
         filename: selected.display_name ?? selected.original_filename,
         jobDescription: description.trim(),
-      })
-    )
-      router.push("/tailoring/processing");
+      })) router.push("/tailoring/processing");
+    });
   }
 
   function goToMyCvs() {
