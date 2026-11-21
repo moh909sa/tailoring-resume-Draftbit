@@ -1,6 +1,6 @@
 import { useAiConsent } from "@/lib/aiConsent/AiConsentProvider";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
+import { ActivityIndicator, FlatList, View } from "react-native";
 import { AppScreen } from "@/components/layout/AppScreen";
 import { ScreenHeader } from "@/components/layout/ScreenHeader";
 import { LibrarySections } from "@/components/library/LibrarySections";
@@ -24,7 +24,6 @@ import { AccountSheet } from "@/components/cv/AccountSheet";
 import LucideIcon from "@/lib/icons/LucideIcon";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useMyCv } from "@/lib/cv/useMyCv";
-import { signOutOfAccount } from "@/lib/auth/accountActions";
 import { useTheme } from "@/theming/ThemeProvider";
 
 export default function MyCvsScreen() {
@@ -33,8 +32,6 @@ export default function MyCvsScreen() {
   const { session, loading: authLoading, error: authError } = useAuth();
   const cv = useMyCv();
   const [showSignIn, setShowSignIn] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
   const [resumeToDelete, setResumeToDelete] = useState<Resume | null>(null);
   useEffect(() => setResumeToDelete(null), [session?.user?.id]);
   const signedIn = !!session?.user?.id;
@@ -58,23 +55,6 @@ export default function MyCvsScreen() {
     if (await cv.remove(resumeToDelete.id)) setResumeToDelete(null);
   }
 
-  async function signOut() {
-    const ownerId = session?.user.id;
-    if (!ownerId || signingOut || busy || cv.deletingId) return;
-    setSigningOut(true);
-    setSignOutError(null);
-    try {
-      await signOutOfAccount(ownerId);
-      setShowSignIn(false);
-    } catch (error) {
-      setSignOutError(
-        error instanceof Error ? error.message : "Unable to sign out. Please try again.",
-      );
-    } finally {
-      setSigningOut(false);
-    }
-  }
-
   return (
     <AppScreen>
       <ScreenHeader
@@ -82,7 +62,7 @@ export default function MyCvsScreen() {
         action={
           <Button
             onPress={chooseFile}
-            disabled={busy || authLoading || !!authError || signingOut}
+            disabled={busy || authLoading || !!authError}
             accessibilityLabel="Upload CV. Choose a PDF or DOCX file, up to 4 megabytes."
             className="h-11 gap-2 rounded-xl px-4"
           >
@@ -105,7 +85,7 @@ export default function MyCvsScreen() {
             actions={
               <CvActionsMenu
                 filename={item.original_filename}
-                disabled={!!cv.deletingId || busy || signingOut}
+                disabled={!!cv.deletingId || busy}
                 deleting={cv.deletingId === item.id}
                 onDelete={() => requestDelete(item)}
                 onRetry={item.processing_status === "failed" || item.recovery_required ? () => withConsent(() => cv.retryProcessing(item.id)) : undefined}
@@ -150,7 +130,6 @@ export default function MyCvsScreen() {
             {cv.retryingId ? <View className="flex-row items-center gap-3 rounded-2xl bg-primary/5 p-4"><ActivityIndicator color={theme.colors.primary}/><Text className="flex-1 text-body text-foreground">Retrying processing of your saved original…</Text></View> : null}
             {cv.notice ? <Notice {...cv.notice} onDismiss={cv.dismissNotice} /> : null}
             {authError ? <Notice tone="error" message={authError} /> : null}
-            {signOutError ? <Notice tone="error" message={signOutError} /> : null}
             {cv.listError ? (
               <View className="gap-3">
                 <Notice tone="error" message={cv.listError} />
@@ -190,28 +169,6 @@ export default function MyCvsScreen() {
                 ) : undefined
               }
             />
-          ) : null
-        }
-        ListFooterComponent={
-          signedIn ? (
-            <View className="mt-6 items-center gap-1">
-              <View className="flex-row items-center gap-1.5">
-                <LucideIcon name="LockKeyhole" size={12} className="text-muted-foreground" />
-                <Text className="text-caption text-muted-foreground" numberOfLines={1}>
-                  {session?.user?.email ?? "Your private library"}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => void signOut()}
-                disabled={busy || signingOut || !!cv.deletingId}
-                accessibilityRole="button"
-                className="px-5 py-3"
-              >
-                <Text className="text-caption text-muted-foreground">
-                  {signingOut ? "Signing out…" : "Sign out"}
-                </Text>
-              </Pressable>
-            </View>
           ) : null
         }
       />

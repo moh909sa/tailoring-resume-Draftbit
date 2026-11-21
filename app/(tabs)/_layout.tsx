@@ -53,6 +53,15 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="account"
+        options={{
+          title: "My Account",
+          tabBarIcon: ({ color, focused }) => (
+            <LucideIcon name="UserRound" size={23} color={color} strokeWidth={focused ? 2 : 1.6} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

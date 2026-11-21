@@ -24,7 +24,7 @@ Server-only Supabase secrets belong on Railway, never in the mobile app.
 
 ## Authentication and uploads
 
-Signed-in users can open My Account at the top of Home to see their login email, change their password with current-password verification, and sign out of this device. Signed-out screens use the shared form for sign-in, sign-up, confirmation resend and Forgot password. Supabase requires email confirmation for new accounts. Email links return to the app or browser that requested them. A password reset opens a temporary session used only to change the password, then prompts for sign-in. Signed-in sessions persist between launches, and the app checks them again when it comes to the foreground.
+Signed-in users can open the My Account tab to see their login email, change their password with current-password verification, and sign out of this device. Signed-out screens use the shared form for sign-in, sign-up, confirmation resend and Forgot password. Supabase requires email confirmation for new accounts. Email links return to the app or browser that requested them. A password reset opens a temporary session used only to change the password, then prompts for sign-in. Signed-in sessions persist between launches, and the app checks them again when it comes to the foreground.
 
 In the existing Supabase project, add these exact entries under **Authentication → URL Configuration → Redirect URLs** for native builds.
 
@@ -33,7 +33,9 @@ In the existing Supabase project, add these exact entries under **Authentication
 
 For each web origin where email links should work, also add the exact HTTPS URLs ending in `/auth/confirm-email` and `/auth/reset-password`. Keep the **Confirm signup** and **Reset password** email templates pointed at `{{ .ConfirmationURL }}`, and use the latest email on the same app installation or browser profile that requested it. Configure [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp) for delivery to customers. Keep SMTP credentials in Supabase and turn off link tracking for authentication emails. Test app-link opening in an iPhone build installed through TestFlight. [Supabase redirect settings](https://supabase.com/docs/guides/auth/redirect-urls)
 
-In My Account, **AI data sharing** shows the active Railway disclosure for the signed-in account. Before uploading or retrying parsing, starting or retrying tailoring, or applying keywords, the app checks the server’s current consent decision without sending CV data. The corresponding Railway release requires its Supabase migration and a verified provider and retention disclosure. Approval saves the current disclosure version. Refusal leaves saved CV viewing, editing and downloading available.
+In My Account, **Privacy → Manage AI permissions** shows the active Railway disclosure for the signed-in account. Before uploading or retrying parsing, starting or retrying tailoring, or applying keywords, the app checks the server’s current consent decision without sending CV data. The corresponding Railway release requires its Supabase migration and a verified provider and retention disclosure. Approval saves the current disclosure version. Refusal leaves saved CV viewing, editing and downloading available.
+
+Set `EXPO_PUBLIC_PRIVACY_POLICY_URL`, `EXPO_PUBLIC_TERMS_URL` and `EXPO_PUBLIC_SUPPORT_EMAIL` to the approved public destinations for My Account. Use HTTPS for policy and terms. With no destination configured, the app explains the link is unavailable. Account deletion and billing require their own backend support.
 
 Native iOS uses the system Files picker and uploads the selected URI with its original filename and canonical MIME type. Web uses the browser picker and File object. Railway processes uploads synchronously, so the app distinguishes sending the file from waiting for processing. It reloads the list even after an error because an original may already have been saved.
 

@@ -11,12 +11,14 @@ export function AppSheet({
   children,
   onDismiss,
   presentation = "page",
+  dismissLabel = "Dismiss section actions",
 }: {
   visible: boolean;
   onClose: () => void;
   children: ReactNode;
   onDismiss?: () => void;
   presentation?: "page" | "actions";
+  dismissLabel?: string;
 }) {
   const { theme } = useTheme();
   return (
@@ -30,7 +32,7 @@ export function AppSheet({
     >
       <ThemeProvider key={theme.name} initialThemeName={theme.name} themes={[theme]}>
         <SafeAreaView edges={presentation === "actions" ? ["left","right"] : undefined} className={cn("flex-1",presentation === "actions" ? "bg-transparent" : "bg-background")}>
-          {presentation === "actions" ? <Pressable accessibilityLabel="Dismiss section actions" onPress={onClose} className={cn("absolute inset-0",theme.name === "dark" ? "bg-background/80" : "bg-overlay/40")}/> : null}
+          {presentation === "actions" ? <Pressable accessibilityLabel={dismissLabel} onPress={onClose} className={cn("absolute inset-0",theme.name === "dark" ? "bg-background/80" : "bg-overlay/40")}/> : null}
           <View pointerEvents="box-none" className={cn("w-full max-w-xl flex-1 self-center",presentation === "actions" && "justify-end")}>{children}</View>
         </SafeAreaView>
       </ThemeProvider>

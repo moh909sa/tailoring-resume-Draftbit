@@ -23,7 +23,7 @@ const copy = {
 };
 
 export function SignInForm({ onClose, initialMode = "signIn", initialEmail = "" }: {
-  onClose: () => void;
+  onClose?: () => void;
   initialMode?: SignInMode;
   initialEmail?: string;
 }) {
@@ -71,7 +71,7 @@ export function SignInForm({ onClose, initialMode = "signIn", initialEmail = "" 
       } else if (creating) {
         const signedIn = await createEmailAccount(address, password);
         setPassword("");
-        if (signedIn) onClose();
+        if (signedIn) onClose?.();
         else {
           setMode("signIn");
           setConfirmationRequired(true);
@@ -82,7 +82,7 @@ export function SignInForm({ onClose, initialMode = "signIn", initialEmail = "" 
         if (error) throw error;
         if (!data.session) throw new Error("Sign-in did not return a session.");
         setPassword("");
-        onClose();
+        onClose?.();
       }
     } catch (error) {
       setConfirmationRequired(mode === "signIn" && isAuthError(error) && error.code === "email_not_confirmed");
@@ -128,9 +128,11 @@ export function SignInForm({ onClose, initialMode = "signIn", initialEmail = "" 
         <Pressable disabled={submitting} accessibilityRole="button" onPress={() => switchMode(mode === "signIn" ? "create" : "signIn")} className="min-h-11 justify-center">
           <Text className="text-h6 text-primary">{mode === "signIn" ? "Create an account" : "Back to sign in"}</Text>
         </Pressable>
-        <Pressable disabled={submitting} accessibilityRole="button" onPress={onClose} className="min-h-11 justify-center">
-          <Text className="text-body text-muted-foreground">Cancel</Text>
-        </Pressable>
+        {onClose ? (
+          <Pressable disabled={submitting} accessibilityRole="button" onPress={onClose} className="min-h-11 justify-center">
+            <Text className="text-body text-muted-foreground">Cancel</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );

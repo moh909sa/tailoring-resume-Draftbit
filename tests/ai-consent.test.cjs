@@ -32,7 +32,7 @@ function harness() {
         return hooks[index] ??= { current: initial };
       },
     },
-    "react-native": { ActivityIndicator: "ActivityIndicator", ScrollView: "ScrollView", View: "View" },
+    "react-native": { ActivityIndicator: "ActivityIndicator", ScrollView: "ScrollView", View: "View", useWindowDimensions: () => ({ height: 844 }) },
     "expo-router": { usePathname: () => route },
     "@/components/layout/AppSheet": { AppSheet: "AppSheet" },
     "@/components/cv/Notice": { Notice: "Notice" },
@@ -134,7 +134,7 @@ test("a refusal cancels the pending action, and only saved consent enables a fre
 
   h.actions().withConsent(start);
   await tick();
-  h.button("Allow AI processing").props.onPress();
+  h.button("Allow").props.onPress();
   await tick();
   assert.deepEqual(h.requests.at(-1), ["put", "owner-a", disclosure.version, true]);
   assert.equal(starts, 0);
@@ -151,10 +151,10 @@ test("saving an approval unsuccessfully keeps the action blocked", async () => {
   let starts = 0;
   h.actions().withConsent(() => { starts++; });
   await tick();
-  h.button("Allow AI processing").props.onPress();
+  h.button("Allow").props.onPress();
   await tick();
   assert.ok(h.button("Decline"));
-  assert.ok(h.button("Allow AI processing"));
+  assert.ok(h.button("Allow"));
   assert.equal(starts, 0);
 });
 
@@ -168,7 +168,7 @@ test("late replies cannot start an action after changing routes or accounts", as
     h.render();
     finish({ ...disclosure, accepted: true });
     await tick();
-    assert.equal(h.button("Allow AI processing"), undefined);
+    assert.equal(h.button("Allow"), undefined);
     assert.equal(starts, 0);
   }
 });

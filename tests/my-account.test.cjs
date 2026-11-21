@@ -59,10 +59,13 @@ function screens(actions) {
     "react-native": { ActivityIndicator: "ActivityIndicator", KeyboardAvoidingView: "KeyboardAvoidingView",
       Platform: { OS: "ios" }, ScrollView: "ScrollView", View: "View", Pressable: "Pressable" },
     "expo-router": { router: { canGoBack: () => false, back: () => navigation.push("back"),
-      replace: value => navigation.push(value), navigate: value => navigation.push(value) } },
+      replace: value => navigation.push(value), navigate: value => navigation.push(value),
+      push: value => navigation.push(value) }, Tabs: { Screen: "TabScreen" } },
     "@/lib/icons/LucideIcon": { __esModule: true, default: "Icon" },
     "@/lib/auth/AuthProvider": { useAuth: () => ({ session: user ? { user } : null, loading, error: null }) },
     "@/lib/auth/accountActions": actions,
+    "@/components/account/AccountLinks": { AccountLinks: "AccountLinks" },
+    "@/theming/ThemeProvider": { useTheme: () => ({ theme: { colors: {}, typography: {} } }) },
     "@/lib/aiConsent/AiConsentProvider": { useAiConsent: () => ({ manageConsent: () => {} }) },
     "@/lib/auth/emailLinks": { minimumPasswordLength: 8, passwordHint: "Use at least 8 characters." },
   };
@@ -73,8 +76,13 @@ function screens(actions) {
   ]) mocks["@/components/" + file] = { [name]: name };
 
   const { default: Home } = load("app/(tabs)/home.tsx", mocks);
-  const { default: Account } = load("app/account.tsx", mocks);
+  const { default: Account } = load("app/(tabs)/account.tsx", mocks);
+  const { default: Tabs } = load("app/(tabs)/_layout.tsx", mocks);
+  const { AccountLinks } = load("components/account/AccountLinks.tsx", mocks);
+  const { default: Privacy } = load("app/privacy.tsx", mocks);
   return {
+    tabs: Tabs, links: (signedIn) => { cursor = 0; return AccountLinks({ signedIn }); },
+    privacy: () => { cursor = 0; return Privacy(); },
     home: () => Home(), account: () => Account(),
     details: () => {
       const component = nodes(Account()).find(node => node.props.ownerId);
@@ -87,10 +95,11 @@ function screens(actions) {
   };
 }
 
-test("signed-in Home opens My Account and the account view follows the authenticated email", () => {
+test("My Account is a tab and shows the current authenticated email", () => {
   const h = screens({});
-  nodes(h.home()).find(node => node.type === "Pressable" && label(node) === "My Account").props.onPress();
-  assert.deepEqual(h.navigation, ["/account"]);
+  assert.ok(nodes(h.tabs()).some(node => node.type === "TabScreen" &&
+    node.props.name === "account" && node.props.options.title === "My Account"));
+  assert.doesNotMatch(label(h.home()), /My Account/);
   let view = h.details();
   assert.match(label(view), /person-a@example\.test/);
   assert.doesNotMatch(label(view), /subscription|free plan|current plan/i);
@@ -101,6 +110,22 @@ test("signed-in Home opens My Account and the account view follows the authentic
   h.user = null;
   assert.doesNotMatch(label(h.home()), /My Account/);
   assert.ok(nodes(h.account()).some(node => node.type === "SignInForm"));
+});
+
+test("Privacy contains consent management and unconfigured account services report their status", () => {
+  const h = screens({});
+  const button = (view, text) => nodes(view).find(node => node.type === "Button" && label(node) === text);
+  const links = h.links(true);
+  assert.ok(button(links, "Delete account"));
+  assert.equal(button(links, "Manage AI permissions"), undefined);
+  button(links, "Privacy").props.onPress();
+  assert.deepEqual(h.navigation, ["/privacy"]);
+  assert.ok(button(h.privacy(), "Manage AI permissions"));
+  button(h.links(true), "Delete account").props.onPress();
+  assert.match(nodes(h.links(true)).find(node => node.type === "Notice").props.message, /not available/);
+  h.user = null;
+  assert.equal(button(h.privacy(), "Manage AI permissions"), undefined);
+  assert.equal(button(h.links(false), "Delete account"), undefined);
 });
 
 test("password change validates confirmation and signs out through the shared account action", async () => {

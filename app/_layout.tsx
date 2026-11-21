@@ -105,7 +105,7 @@ function RootContent() {
   }, [isLoadingFonts]);
 
   React.useEffect(() => {
-    if (!navigation?.key || isLoadingFonts || !isColorSchemeLoaded || pathname === "/account" || pathname.startsWith("/auth/")) return;
+    if (!navigation?.key || isLoadingFonts || !isColorSchemeLoaded || pathname === "/account" || pathname === "/privacy" || pathname.startsWith("/auth/")) return;
     if (tailoring.pendingJobReview && tailoring.tailoringId && tailoring.status === "success") {
       // Processing keeps its existing success navigation. Recovery from Home
       // or a fresh launch opens the exact saved job's review here.
@@ -167,7 +167,7 @@ function RootContent() {
           />
           <Stack.Screen name="(tabs)" options={{ title: "Home" }} />
           <Stack.Screen name="my-cv" options={{ title: "My CVs" }} />
-          <Stack.Screen name="account" options={{ title: "My Account" }} />
+          <Stack.Screen name="privacy" options={{ title: "Privacy" }} />
           <Stack.Screen name="auth/[action]" options={{ title: "Account access" }} />
           <Stack.Screen name="cv-editor/[id]" options={{ title: "Edit Resume" }} />
           <Stack.Screen name="cv-editor/[id]/job-match" options={{ title: "Job Match" }} />

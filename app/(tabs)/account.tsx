@@ -1,10 +1,10 @@
-import { useAiConsent } from "@/lib/aiConsent/AiConsentProvider";
 import { useRef, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { router } from "expo-router";
 import { Notice } from "@/components/cv/Notice";
 import { SignInForm } from "@/components/cv/SignInForm";
 import { AppScreen } from "@/components/layout/AppScreen";
+import { ScreenHeader } from "@/components/layout/ScreenHeader";
+import { AccountLinks } from "@/components/account/AccountLinks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
@@ -13,14 +13,8 @@ import { changeAccountPassword, passwordChangeMessage, signOutOfAccount } from "
 import { minimumPasswordLength, passwordHint } from "@/lib/auth/emailLinks";
 import LucideIcon from "@/lib/icons/LucideIcon";
 
-function goBack() {
-  if (router.canGoBack()) router.back();
-  else router.replace("/(tabs)/home");
-}
-
 function AccountDetails({ ownerId, email }: { ownerId: string; email?: string }) {
   const [editing, setEditing] = useState(false);
-  const { manageConsent } = useAiConsent();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -126,9 +120,7 @@ function AccountDetails({ ownerId, email }: { ownerId: string; email?: string })
           <LucideIcon name="KeyRound" size={19} className="text-primary" /><Text>Change password</Text>
         </Button>
       )}
-      <Button variant="outline" className="min-h-12 justify-start gap-3 rounded-xl" disabled={!!busy} onPress={manageConsent}>
-        <LucideIcon name="Shield" size={19} className="text-primary" /><Text>AI data sharing</Text>
-      </Button>
+      <AccountLinks signedIn />
       <Button variant="outline" className="min-h-12 justify-start gap-3 rounded-xl" disabled={!!busy} onPress={() => void signOut()}>
         <LucideIcon name="LogOut" size={19} className="text-destructive" />
         <Text className="text-destructive">{busy === "signOut" ? "Signing out…" : "Sign out"}</Text>
@@ -144,12 +136,7 @@ export default function AccountScreen() {
 
   return (
     <AppScreen>
-      <View className="min-h-16 flex-row items-center gap-2 px-4 py-3">
-        <Button accessibilityLabel="Go back" variant="ghost" size="icon" className="h-11 w-11 shrink-0" onPress={goBack}>
-          <LucideIcon name="ChevronLeft" size={22} className="text-foreground" />
-        </Button>
-        <Text accessibilityRole="header" className="flex-1 text-h2 tracking-tight text-foreground">My Account</Text>
-      </View>
+      <ScreenHeader title="My Account" />
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerClassName="px-6 pb-12 pt-3">
           {loading ? (
@@ -161,7 +148,8 @@ export default function AccountScreen() {
           ) : (
             <View className="gap-4">
               {error ? <Notice tone="error" message={error} /> : null}
-              <SignInForm onClose={goBack} />
+              <SignInForm />
+              <AccountLinks />
             </View>
           )}
         </ScrollView>

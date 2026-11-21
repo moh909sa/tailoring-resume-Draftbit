@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, ScrollView, View } from "react-native";
+import { ActivityIndicator, ScrollView, View, useWindowDimensions } from "react-native";
 import { usePathname } from "expo-router";
 import { AppSheet } from "@/components/layout/AppSheet";
 import { Notice } from "@/components/cv/Notice";
@@ -29,6 +29,7 @@ type Request = {
 
 export function AiConsentProvider({ children }: { children: ReactNode }) {
   const owner = useAuth().session?.user.id;
+  const { height } = useWindowDimensions();
   const route = usePathname();
   const view = useRef({ owner, route });
   view.current = { owner, route };
@@ -69,7 +70,7 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       if (isActive(request)) {
-        setSheet({ request, error: "We couldn’t check AI data sharing. Try again in a moment." });
+        setSheet({ request, error: "AI permissions are unavailable right now. You can still use your saved CVs." });
       }
     }
   }
@@ -110,45 +111,40 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
     <ConsentContext.Provider value={{ withConsent: open, manageConsent: () => open() }}>
       {children}
       {visible ? (
-        <AppSheet visible onClose={() => { if (!visible.request.saving) cancel(visible.request); }}>
-          <ScrollView contentContainerClassName="grow gap-6 px-6 pb-8 pt-8">
-            <View className="gap-3">
-              <Text accessibilityRole="header" className="text-h2 text-foreground">AI data sharing</Text>
-              <Text className="text-body leading-6 text-muted-foreground">
-                Choose whether to share CV information with AI providers to read your CV, tailor it to a role and apply keywords.
-              </Text>
-            </View>
+        <AppSheet
+          visible
+          presentation="actions"
+          dismissLabel="Close AI permissions"
+          onClose={() => { if (!visible.request.saving) cancel(visible.request); }}
+        >
+          <ScrollView
+            accessibilityViewIsModal
+            className="grow-0 rounded-t-3xl border border-border bg-card"
+            style={{ maxHeight: height * 0.75 }}
+            contentContainerClassName="gap-4 px-6 pb-6 pt-5"
+          >
+            <Text accessibilityRole="header" className="text-h4 text-foreground">
+              {visible.request.start ? "Allow AI processing?" : "AI permissions"}
+            </Text>
             {visible.notice ? (
-              <>
-                <View className="gap-4 rounded-2xl border border-border bg-card p-5">
-                  <View className="gap-1">
-                    <Text className="text-h6 text-foreground">What’s shared</Text>
-                    <Text className="text-body leading-6 text-muted-foreground">
-                      CV text, including any contact details it contains, your job description and selected keywords.
-                    </Text>
-                  </View>
-                  <View className="gap-1">
-                    <Text className="text-h6 text-foreground">Who receives it</Text>
-                    <Text className="text-body leading-6 text-muted-foreground">{visible.notice.recipients.join(", ")}</Text>
-                  </View>
-                  <View className="gap-1">
-                    <Text className="text-h6 text-foreground">Provider retention</Text>
-                    <Text className="text-body leading-6 text-muted-foreground">{visible.notice.retention}</Text>
-                  </View>
-                </View>
-                <Text className="text-body leading-6 text-muted-foreground">
-                  You can still open, edit and download saved CVs if you decline. Change your choice in My Account.
+              <View className="gap-2">
+                <Text className="text-body leading-6 text-foreground">
+                  {visible.notice.recipients.join(", ")} receive CV text and any contact details it contains, job descriptions and selected keywords to read and tailor your CV.
                 </Text>
-              </>
+                <Text className="text-body leading-6 text-muted-foreground">{visible.notice.retention}</Text>
+                <Text className="text-caption leading-5 text-muted-foreground">
+                  Saved CVs stay available. Change your choice in My Account → Privacy.
+                </Text>
+              </View>
             ) : null}
             {visible.error ? <Notice tone="error" message={visible.error} /> : null}
             {visible.notice ? (
-              <View className="gap-3">
+              <View className="gap-2">
                 {visible.notice.accepted === true ? (
-                  <Notice tone="success" message={visible.request.start ? "AI processing is allowed. Close this screen and try your action again." : "AI processing is allowed."} />
+                  <Notice tone="success" message={visible.request.start ? "Allowed. Close and try again." : "AI processing is allowed."} />
                 ) : (
                   <Button className="min-h-12 rounded-xl" disabled={visible.saving} onPress={() => void choose(visible, true)}>
-                    <Text>{visible.saving ? "Saving…" : "Allow AI processing"}</Text>
+                    <Text>{visible.saving ? "Saving…" : "Allow"}</Text>
                   </Button>
                 )}
                 {visible.notice.accepted === false ? (
